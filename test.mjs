@@ -1,7 +1,10 @@
 // End-to-end test: runs scraper.mjs against a local mock of the skills.sh API.
-// No real token, no network. Covers: pagination, skills.jsonl index shape,
-// pure content directories, path sanitization, resume on re-run, .env.local
-// token loading, 429 retry honoring Retry-After, --skip-duplicates, --audits.
+// No real token, no network. Covers: pagination (with leaderboard drift),
+// skills.jsonl index shape (only saved skills — duplicates, no-snapshot skills
+// and failed fetches are omitted), pure content directories, path
+// sanitization, full re-write every run with fetchedAt pinned to the content
+// hash via the previous index, .env.local token loading, 429 retry honoring
+// Retry-After, --audits.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -17,20 +20,25 @@ const SCRAPER = fileURLToPath(new URL("./scraper.mjs", import.meta.url));
 const VERIFY = fileURLToPath(new URL("./verify.mjs", import.meta.url));
 
 // Realistic content hashes (64-hex) so the verifier's format check passes.
-const hashOf = (id) => createHash("sha256").update(id).digest("hex");
+const hashOf = (s) => createHash("sha256").update(s).digest("hex");
+
+// find-skills content is revision-controlled so tests can simulate upstream edits.
+const findSkillsFiles = (rev) => [
+  { path: "SKILL.md", contents: `# find-skills rev ${rev}\nFind skills on skills.sh.\n` },
+  { path: "scripts/run.sh", contents: "#!/bin/sh\necho find-skills\n" },
+  { path: "_meta.json", contents: "{}\n" }, // some skills ship their own _meta.json
+];
+let findSkillsRev = 0;
 
 const FILES = {
-  "vercel-labs/skills/find-skills": [
-    { path: "SKILL.md", contents: "# find-skills\nFind skills on skills.sh.\n" },
-    { path: "scripts/run.sh", contents: "#!/bin/sh\necho find-skills\n" },
-    { path: "_meta.json", contents: "{}\n" }, // some skills ship their own _meta.json
-  ],
   "mintlify.com/mintlify": [{ path: "SKILL.md", contents: "# mintlify\nWell-known skill.\n" }],
   "owner/repo/wei rd~x": [{ path: "SKILL.md", contents: "# weird slug\n" }],
   "owner/repo/dup-skill": [{ path: "SKILL.md", contents: "# duplicate\n" }],
   "owner/repo/rate-limited": null, // no upstream snapshot: hash null, files null
   "owner/repo/bad-id": null, // upstream rejects the detail request outright
 };
+
+const filesFor = (id) => (id === "vercel-labs/skills/find-skills" ? findSkillsFiles(findSkillsRev) : FILES[id]);
 
 const AUDITS = {
   "vercel-labs/skills/find-skills": [
@@ -90,8 +98,12 @@ test("scraper end-to-end against mock API", async () => {
       res.end("rate limited");
       return;
     }
+    const files = filesFor(id);
     res.setHeader("content-type", "application/json");
-    res.end(JSON.stringify({ id: skill.id, source: skill.source, slug: skill.slug, installs: skill.installs, hash: FILES[skill.id] ? hashOf(skill.id) : null, files: FILES[skill.id] }));
+    // The hash covers the content: bumping findSkillsRev changes exactly one
+    // skill's upstream hash, the others' hashes stay stable across runs.
+    const hash = files ? (id === "vercel-labs/skills/find-skills" ? hashOf(`${id}:${findSkillsRev}`) : hashOf(id)) : null;
+    res.end(JSON.stringify({ id: skill.id, source: skill.source, slug: skill.slug, installs: skill.installs, hash, files }));
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -122,30 +134,32 @@ test("scraper end-to-end against mock API", async () => {
   const dir = (out, ...p) => path.join(out, "skills", ...p);
 
   try {
-    // --- run 1: default scrape saves everything, content dirs stay pure
+    // --- run 1: default scrape saves everything saveable; the index holds
+    // only the saved skills (dup / no-snapshot / failed are left out)
     const r1 = await run(out1);
     assert.equal(r1.status, 0, `run 1 failed:\n${r1.stderr}`);
     assert.equal(hits.list, 2); // 6 skills, 3 per mock page
-    assert.equal(hits.detail, 7); // 6 skills + one 429 retried (the 400 is not retried)
+    assert.equal(hits.detail, 6); // 5 skills attempted + one 429 retry; the duplicate is never fetched
     assert.equal(hits.audit, 0); // flag off -> no audit requests
 
     const rows1 = await readRows(out1);
-    assert.equal(rows1.length, 6);
-    assert.equal(rows1[0].id, "vercel-labs/skills/find-skills"); // leaderboard order kept
+    assert.deepEqual(
+      rows1.map((r) => r.id),
+      ["vercel-labs/skills/find-skills", "mintlify.com/mintlify", "owner/repo/wei rd~x"], // installs desc; dup, no-snapshot and failed skills omitted
+    );
     assert.equal(rows1[0].installs, 12345);
-    assert.equal(rows1[0].contentSaved, true);
-    assert.equal(rows1[0].hash, hashOf("vercel-labs/skills/find-skills"));
+    assert.equal(rows1[0].hash, hashOf("vercel-labs/skills/find-skills:0"));
     assert.ok(rows1[0].fetchedAt);
     assert.equal("audits" in rows1[0], false);
-    assert.equal(rows1[3].isDuplicate, true); // flag preserved on the row
+    for (const gone of ["contentSaved", "noSnapshot", "error"]) assert.equal(gone in rows1[0], false);
 
     assert.equal(
       await readFile(dir(out1, "vercel-labs__skills__find-skills", "SKILL.md"), "utf8"),
-      FILES["vercel-labs/skills/find-skills"][0].contents,
+      findSkillsFiles(0)[0].contents,
     );
     assert.equal(
       await readFile(dir(out1, "vercel-labs__skills__find-skills", "scripts", "run.sh"), "utf8"),
-      FILES["vercel-labs/skills/find-skills"][1].contents,
+      findSkillsFiles(0)[1].contents,
     );
     // content dirs contain ONLY skill files (upstream-shipped _meta.json is legit)
     assert.deepEqual((await readdir(dir(out1, "vercel-labs__skills__find-skills"))).sort(), ["SKILL.md", "_meta.json", "scripts"]);
@@ -153,43 +167,65 @@ test("scraper end-to-end against mock API", async () => {
     assert.equal(await readFile(dir(out1, "mintlify.com__mintlify", "SKILL.md"), "utf8"), FILES["mintlify.com/mintlify"][0].contents);
     // unsafe slug characters are sanitized in directory names
     assert.equal(await readFile(dir(out1, "owner__repo__wei_rd_x", "SKILL.md"), "utf8"), FILES["owner/repo/wei rd~x"][0].contents);
-    // skill without snapshot: no directory, row marked noSnapshot
+    // duplicate / no-snapshot / failed skills leave nothing on disk
+    assert.equal(await pathExists(dir(out1, "owner__repo__dup-skill")), false);
     assert.equal(await pathExists(dir(out1, "owner__repo__rate-limited")), false);
-    assert.equal(rows1[4].contentSaved, false);
-    assert.equal(rows1[4].noSnapshot, true);
-    assert.equal(rows1[4].hash, null);
-    // permanently failing skill: run still exits 0, error recorded on the row
     assert.equal(await pathExists(dir(out1, "owner__repo__bad-id")), false);
-    assert.equal(rows1[5].contentSaved, false);
-    assert.match(rows1[5].error, /HTTP 400/);
+    assert.match(r1.stderr, /saved=3, updated=0, dropped=2, failed=1/); // run still exits 0
     // no temp leftovers
     assert.equal(await pathExists(path.join(out1, ".tmp")), false);
 
-    // --- run 2: resume — content reused; only the failed skill is retried
+    // --- run 2: everything is re-fetched and re-written, but while the
+    // upstream hash is unchanged each row keeps the fetchedAt of the run
+    // that first fetched that content version
     const r2 = await run(out1);
     assert.equal(r2.status, 0, `run 2 failed:\n${r2.stderr}`);
-    assert.equal(hits.detail, 8); // +1: the failed skill is retried (and fails again)
+    assert.equal(hits.detail, 11); // +5: the three saves + no-snapshot + failed skill
     assert.equal(hits.audit, 0);
-    assert.match(r2.stderr, /saved=0, reused=5, failed=1/);
+    assert.match(r2.stderr, /saved=0, updated=3, dropped=2, failed=1/);
     const rows2 = await readRows(out1);
-    assert.equal(rows2.length, 6);
-    assert.match(rows2[5].error, /HTTP 400/);
+    assert.equal(rows2.length, 3);
+    assert.deepEqual(rows2.map((r) => r.fetchedAt), rows1.map((r) => r.fetchedAt)); // carried over
+    assert.deepEqual(rows2.map((r) => r.hash), rows1.map((r) => r.hash));
+    assert.equal(
+      await readFile(dir(out1, "vercel-labs__skills__find-skills", "SKILL.md"), "utf8"),
+      findSkillsFiles(0)[0].contents,
+    );
 
-    // --- run 3: fresh dir with --audits --skip-duplicates
-    const r3 = await run(out2, ["--audits", "--skip-duplicates"]);
+    // --- run 3: upstream edits find-skills -> hash changes, its fetchedAt is
+    // re-stamped while the untouched skills keep theirs
+    findSkillsRev = 1;
+    const r3 = await run(out1);
     assert.equal(r3.status, 0, `run 3 failed:\n${r3.stderr}`);
-    assert.equal(hits.detail, 13); // +5 new fetches (no 429 retry left for rate-limited)
-    assert.equal(hits.audit, 5); // all but the failed skill (no audit after a detail error); unaudited -> 404 -> []
+    assert.equal(hits.detail, 16); // +5
+    assert.match(r3.stderr, /saved=0, updated=3, dropped=2, failed=1/);
+    const rows3 = await readRows(out1);
+    assert.equal(rows3[0].hash, hashOf("vercel-labs/skills/find-skills:1"));
+    assert.notEqual(rows3[0].fetchedAt, rows1[0].fetchedAt); // re-stamped for the new content
+    assert.deepEqual(rows3.slice(1).map((r) => r.fetchedAt), rows1.slice(1).map((r) => r.fetchedAt)); // unchanged hash -> unchanged fetchedAt
+    assert.equal(
+      await readFile(dir(out1, "vercel-labs__skills__find-skills", "SKILL.md"), "utf8"),
+      findSkillsFiles(1)[0].contents, // new content on disk
+    );
 
-    const rows3 = await readRows(out2);
-    assert.equal(rows3.length, 6);
-    assert.equal(await pathExists(dir(out2, "owner__repo__dup-skill")), false); // no content for duplicates
-    assert.equal(rows3[3].contentSaved, false);
-    assert.equal("noSnapshot" in rows3[3], false); // skipped by flag, not by upstream
-    assert.deepEqual(rows3[0].audits, AUDITS["vercel-labs/skills/find-skills"]);
-    assert.deepEqual(rows3[1].audits, []); // audited by nobody -> empty array
+    // --- run 4: fresh dir with --audits; stale duplicate content is cleaned up
+    await mkdir(dir(out2, "owner__repo__dup-skill"), { recursive: true }); // leftover from an older scrape
+    const r4 = await run(out2, ["--audits"]);
+    assert.equal(r4.status, 0, `run 4 failed:\n${r4.stderr}`);
+    assert.equal(hits.detail, 21); // +5 new fetches (the duplicate is skipped, no 429 retry left)
+    assert.equal(hits.audit, 3); // only the three saved skills reach the audit call
+    assert.match(r4.stderr, /saved=3, updated=0, dropped=2, failed=1/);
 
-    // --- artifact verifier accepts both datasets (default + flag modes)
+    const rows4 = await readRows(out2);
+    assert.deepEqual(
+      rows4.map((r) => r.id),
+      ["vercel-labs/skills/find-skills", "mintlify.com/mintlify", "owner/repo/wei rd~x"],
+    );
+    assert.equal(await pathExists(dir(out2, "owner__repo__dup-skill")), false); // stale duplicate content removed
+    assert.deepEqual(rows4[0].audits, AUDITS["vercel-labs/skills/find-skills"]);
+    assert.deepEqual(rows4[1].audits, []); // audited by nobody -> empty array
+
+    // --- artifact verifier accepts both datasets (default + audits modes)
     const verify = async (out) => {
       const child = spawn(process.execPath, [VERIFY, "--out", out], { cwd: workDir, env: process.env });
       let stdout = "";
@@ -204,27 +240,37 @@ test("scraper end-to-end against mock API", async () => {
     };
     const v1 = await verify(out1);
     assert.equal(v1.status, 0, `verify out1 failed:\n${v1.stdout}${v1.stderr}`);
-    assert.match(v1.stdout, /OK: 6 rows, 4 content directories/);
+    assert.match(v1.stdout, /OK: 3 rows, 3 content directories/);
     const v2 = await verify(out2);
     assert.equal(v2.status, 0, `verify out2 failed:\n${v2.stdout}${v2.stderr}`);
+    assert.match(v2.stdout, /OK: 3 rows, 3 content directories/);
 
     // --- verifier rejects tampered datasets (problems are reported on stderr)
-    // 1. index claims content that is gone from disk
-    await rm(dir(out1, "vercel-labs__skills__find-skills"), { recursive: true, force: true });
+    // 1. content directory without an index row
+    await mkdir(dir(out1, "owner__repo__orphan"), { recursive: true });
     const t1 = await verify(out1);
     assert.equal(t1.status, 1);
-    assert.match(t1.stderr, /directory missing/);
-    // 2. index order broken
-    const reversed = (await readRows(out1)).reverse();
-    await writeFile(path.join(out1, "skills.jsonl"), reversed.map((r) => JSON.stringify(r)).join("\n") + "\n");
+    assert.match(t1.stderr, /orphan content directory/);
+    await rm(dir(out1, "owner__repo__orphan"), { recursive: true, force: true });
+    // 2. index claims content that is gone from disk
+    await rm(dir(out1, "vercel-labs__skills__find-skills"), { recursive: true, force: true });
     const t2 = await verify(out1);
     assert.equal(t2.status, 1);
-    assert.match(t2.stderr, /not sorted/);
-    // 3. leftover temp file from an interrupted run
-    await writeFile(path.join(out1, "skills.jsonl.tmp"), "{");
+    assert.match(t2.stderr, /no content directory/);
+    await mkdir(dir(out1, "vercel-labs__skills__find-skills"), { recursive: true });
+    await writeFile(dir(out1, "vercel-labs__skills__find-skills", "SKILL.md"), "restored\n");
+    // 3. index order broken
+    const reversed = (await readRows(out1)).reverse();
+    await writeFile(path.join(out1, "skills.jsonl"), reversed.map((r) => JSON.stringify(r)).join("\n") + "\n");
     const t3 = await verify(out1);
     assert.equal(t3.status, 1);
-    assert.match(t3.stderr, /skills\.jsonl\.tmp/);
+    assert.match(t3.stderr, /not sorted/);
+    await writeFile(path.join(out1, "skills.jsonl"), rows1.map((r) => JSON.stringify(r)).join("\n") + "\n");
+    // 4. leftover temp file from an interrupted run
+    await writeFile(path.join(out1, "skills.jsonl.tmp"), "{");
+    const t4 = await verify(out1);
+    assert.equal(t4.status, 1);
+    assert.match(t4.stderr, /skills\.jsonl\.tmp/);
   } finally {
     server.close();
     await rm(workDir, { recursive: true, force: true });

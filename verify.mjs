@@ -4,12 +4,12 @@
  *
  * Checks skills.jsonl + content directories against the scraper's invariants:
  *   - every line parses; ids unique; rows sorted by installs desc
- *   - required fields well-formed (id, sourceType, installs, contentSaved,
- *     fetchedAt, hash, audits)
- *   - noSnapshot rows have contentSaved=false, no hash and no directory
- *   - contentSaved matches the on-disk directory exactly
- *   - content directories are non-empty (their files mirror the upstream
- *     skill verbatim, including files like _meta.json that skills may ship)
+ *   - required fields well-formed (id, sourceType, installs, fetchedAt, hash,
+ *     audits)
+ *   - rows and content directories match exactly, in both directions: every
+ *     row has a non-empty directory (its files mirror the upstream skill
+ *     verbatim, including files like _meta.json that skills may ship) and
+ *     every directory belongs to a row
  *   - no .tmp / skills.jsonl.tmp leftovers from interrupted runs
  *
  * Usage: node verify.mjs [--out data]
@@ -27,7 +27,7 @@ const OUT_DIR = argValue("--out") ?? "data";
 
 // Must match scraper.mjs exactly.
 const safeSegment = (s) => (s === "." || s === ".." ? "_" : s.replace(/[^\w.-]/g, "_"));
-const skillDir = (id) => path.join(OUT_DIR, "skills", id.split("/").map(safeSegment).join("__"));
+const dirName = (id) => id.split("/").map(safeSegment).join("__");
 
 const exists = (p) => access(p).then(() => true, () => false);
 const isHash = (v) => typeof v === "string" && /^[0-9a-f]{64}$/i.test(v);
@@ -43,30 +43,10 @@ function checkRow(row) {
   if (typeof id !== "string" || id.split("/").filter((s) => s.length).length < 2) problem(`${label}: malformed id`);
   if (!["github", "well-known"].includes(row.sourceType)) problem(`${label}: bad sourceType ${JSON.stringify(row.sourceType)}`);
   if (!Number.isFinite(row.installs) || row.installs < 0) problem(`${label}: bad installs`);
-  if (typeof row.contentSaved !== "boolean") problem(`${label}: contentSaved must be a boolean`);
   if (row.fetchedAt !== null && !isIso(row.fetchedAt)) problem(`${label}: bad fetchedAt`);
   if (row.hash !== null && !isHash(row.hash)) problem(`${label}: bad hash`);
   if ("audits" in row && !Array.isArray(row.audits)) problem(`${label}: audits must be an array`);
-  if ("error" in row && typeof row.error !== "string") problem(`${label}: error must be a string`);
-  if (row.noSnapshot) {
-    if (row.contentSaved !== false) problem(`${label}: noSnapshot but contentSaved=true`);
-    if (row.hash !== null) problem(`${label}: noSnapshot but hash set`);
-  }
   return label;
-}
-
-async function checkContentDir(row, label) {
-  const dir = skillDir(row.id);
-  const dirExists = await exists(dir);
-  if (dirExists !== row.contentSaved) {
-    problem(`${label}: contentSaved=${row.contentSaved} but directory ${dirExists ? "exists" : "missing"}`);
-    return false;
-  }
-  if (!dirExists) return false;
-  const entries = await readdir(dir, { recursive: true, withFileTypes: true });
-  const files = entries.filter((e) => e.isFile());
-  if (!files.length) problem(`${label}: content directory is empty`);
-  return true;
 }
 
 let dirCount = 0;
@@ -98,10 +78,29 @@ if (text === null) {
       break;
     }
   }
+
+  // Rows and directories must match exactly, in both directions.
+  const rowNames = new Set();
   for (const row of rows) {
     const label = checkRow(row);
-    if (typeof row.id === "string" && (await checkContentDir(row, label))) dirCount++;
+    if (typeof row.id !== "string") continue;
+    rowNames.add(dirName(row.id));
+    const dir = path.join(OUT_DIR, "skills", dirName(row.id));
+    if (!(await exists(dir))) {
+      problem(`${label}: index row has no content directory`);
+      continue;
+    }
+    const entries = await readdir(dir, { recursive: true, withFileTypes: true });
+    if (!entries.some((e) => e.isFile())) problem(`${label}: content directory is empty`);
+    dirCount++;
   }
+  const skillDirs = await readdir(path.join(OUT_DIR, "skills"), { withFileTypes: true }).catch(() => null);
+  if (skillDirs) {
+    for (const entry of skillDirs) {
+      if (entry.isDirectory() && !rowNames.has(entry.name)) problem(`orphan content directory (no index row): ${entry.name}`);
+    }
+  }
+
   if (await exists(path.join(OUT_DIR, ".tmp"))) problem(".tmp leftover from an interrupted run");
   if (await exists(path.join(OUT_DIR, "skills.jsonl.tmp"))) problem("skills.jsonl.tmp leftover from an interrupted run");
 }

@@ -19,7 +19,7 @@ git log dist                                                                    
 
 ```
 data/
-├── skills.jsonl   每行一个技能,按 installs 降序 —— 查询 / 筛选 / 排行在这里
+├── skills.jsonl   每个已保存技能一行,按 installs 降序 —— 查询 / 筛选 / 排行在这里
 └── skills/        每个技能一个目录 —— 读文件 / 拷贝在这里
     ├── vercel-labs__skills__find-skills/     技能 id 中的 "/" → "__"
     │   └── SKILL.md
@@ -27,18 +27,17 @@ data/
         └── SKILL.md
 ```
 
-技能目录里的文件与上游技能完全一致——整个目录可直接拷入 agent 的 skills 文件夹。索引与内容每次运行后都会做完整性校验,「目录存在」就意味着「内容完整」。
+技能目录里的文件与上游技能完全一致——整个目录可直接拷入 agent 的 skills 文件夹。索引与内容目录严格对应——有行当且仅当有目录——且「目录存在」就意味着「内容完整」。两者每次运行后都会做完整性校验。
 
-`skills.jsonl` 每行包含 skills.sh 排行榜字段(`id`、`slug`、`name`、`source`、`sourceType`、`installs`、`installUrl`、`url`、可选 `isDuplicate`),以及爬虫添加的:
+`skills.jsonl` 每行包含 skills.sh 排行榜字段(`id`、`slug`、`name`、`source`、`sourceType`、`installs`、`installUrl`、`url`),以及爬虫添加的:
 
 | 字段 | 含义 |
 |---|---|
 | `hash` | 技能文件内容的 SHA-256;未知时为 `null` |
-| `contentSaved` | 文件已落盘于 `skills/` 下 |
-| `noSnapshot` | skills.sh 上无该技能的文件快照时存在 |
-| `fetchedAt` | 内容最近一次抓取的时间 |
+| `fetchedAt` | 当前内容版本首次抓取的时间(hash 未变时沿用;内容本身每次运行都会重新下载) |
 | `audits` | 使用 `--audits` 时:合作方审计结果(`provider`、`status`、`riskLevel`…);`[]` = 尚无人审计 |
-| `error` | 上次运行该技能抓取失败;下次运行自动重试 |
+
+不会进入索引的技能:重复技能(排行榜上的 `isDuplicate`)、上游无文件快照的技能、抓取失败的技能。每次运行都会重试它们,并在运行日志里计入 `dropped` / `failed`。
 
 ## 使用数据
 

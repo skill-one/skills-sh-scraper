@@ -6,18 +6,28 @@
  * (env var, or .env.local produced by `vercel env pull`) — see DEVELOPING.md.
  *
  * Output shape:
- *   data/skills.jsonl                       one metadata row per skill (the single index)
+ *   data/skills.jsonl                       index: one row per skill whose
+ *                                           files are on disk under skills/
  *   data/skills/{owner}__{repo}__{slug}/    pure skill files, nothing else
+ *
+ * The index lists exactly the skills with content on disk: one row if and
+ * only if the skill's directory exists. Duplicate skills, skills without an
+ * upstream snapshot, and skills whose fetch failed are left out (and retried
+ * on the next run); the final summary counts them.
  *
  * Usage:
  *   node scraper.mjs                    # full scrape into ./data
  *   node scraper.mjs --limit 20         # fetch details for the first 20 skills only
  *   node scraper.mjs --out ./data       # custom output directory
  *   node scraper.mjs --audits           # also fetch security audit results
- *   node scraper.mjs --skip-duplicates  # don't fetch content of isDuplicate skills
  *
- * Safe to re-run: content from a previous run is reused (resume state comes
- * from skills.jsonl + the content directories), so interrupted scrapes resume.
+ * Content is fully re-downloaded and rewritten on every run; the previous
+ * skills.jsonl only pins fetchedAt: while a skill's upstream hash is
+ * unchanged it keeps the fetchedAt of the run that first fetched that
+ * content version.
+ *
+ * Safe to re-run: interrupted scrapes resume, and upstream edits are picked
+ * up on the next run.
  */
 
 import { access, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
@@ -32,7 +42,6 @@ const argValue = (flag) => {
 const OUT_DIR = argValue("--out") ?? "data";
 const DETAIL_LIMIT = argValue("--limit") ? Number(argValue("--limit")) : Infinity;
 const WANT_AUDITS = args.includes("--audits");
-const SKIP_DUPLICATES = args.includes("--skip-duplicates");
 const CONCURRENCY = 10; // API rate limit is 600 req/min per (team, project)
 
 async function loadToken() {
@@ -127,7 +136,8 @@ async function fetchLeaderboard(token) {
   }
 }
 
-// Previous run's index drives resume: it knows which skills had a snapshot.
+// Previous run's index drives resume: for skills whose directory is already
+// on disk it remembers hash/fetchedAt/audits without re-fetching them.
 async function loadPrevIndex() {
   try {
     const text = await readFile(path.join(OUT_DIR, "skills.jsonl"), "utf8");
@@ -138,51 +148,61 @@ async function loadPrevIndex() {
   }
 }
 
+// Returns { row, action } for the index. row is null when the skill is left
+// out of the index: duplicates (stale content removed too) and skills without
+// an upstream snapshot. Fetch errors propagate to the worker, which also
+// leaves the skill out (retry on the next run).
+//
+// Content is fully re-downloaded and rewritten on every run. The previous row
+// only pins fetchedAt: while the upstream hash is unchanged, fetchedAt keeps
+// describing when that content version was first fetched.
 async function fetchSkill(skill, prev, token) {
   const dir = skillDir(skill.id);
+  if (skill.isDuplicate) {
+    await rm(dir, { recursive: true, force: true });
+    return { row: null, action: "dropped" };
+  }
+
+  const detail = await apiGet(`/api/v1/skills/${encId(skill.id)}`, token);
+  if (!Array.isArray(detail.files) || !detail.files.length) {
+    return { row: null, action: "dropped" }; // no upstream snapshot; retried next run
+  }
+
   const dirExists = await exists(dir);
-  let hash = prev?.hash ?? null;
-  let fetchedAt = prev?.fetchedAt ?? null;
-  let contentSaved = dirExists;
-  let noSnapshot = prev?.noSnapshot ?? false;
-  let action = "skipped";
-
-  const needContent = !dirExists && !noSnapshot && !(SKIP_DUPLICATES && skill.isDuplicate);
-  if (needContent) {
-    const detail = await apiGet(`/api/v1/skills/${encId(skill.id)}`, token);
-    hash = detail.hash ?? null;
-    fetchedAt = new Date().toISOString();
-    if (Array.isArray(detail.files) && detail.files.length) {
-      // Write to a temp dir and rename, so "directory exists" implies "complete".
-      const tmp = path.join(OUT_DIR, ".tmp", ...skill.id.split("/").map(safeSegment));
-      await rm(tmp, { recursive: true, force: true });
-      for (const file of detail.files) {
-        const target = path.join(tmp, ...file.path.split("/").map(safeSegment));
-        await mkdir(path.dirname(target), { recursive: true });
-        await writeFile(target, file.contents ?? "");
-      }
-      await mkdir(path.dirname(dir), { recursive: true });
-      await rename(tmp, dir);
-      contentSaved = true;
-      action = "saved";
-    } else {
-      noSnapshot = true; // no upstream snapshot; skip it on future runs too
-    }
+  // Write to a temp dir and rename, so "directory exists" implies "complete".
+  // An outdated directory has to be removed first (rename(2) cannot replace a
+  // non-empty directory); a crash in that window leaves the row without
+  // content, which the next run simply re-fetches.
+  if (dirExists) await rm(dir, { recursive: true, force: true });
+  const tmp = path.join(OUT_DIR, ".tmp", ...skill.id.split("/").map(safeSegment));
+  await rm(tmp, { recursive: true, force: true });
+  for (const file of detail.files) {
+    const target = path.join(tmp, ...file.path.split("/").map(safeSegment));
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, file.contents ?? "");
   }
+  await mkdir(path.dirname(dir), { recursive: true });
+  await rename(tmp, dir);
 
-  let audits;
-  if (WANT_AUDITS && prev?.audits === undefined) {
-    const raw = await apiGet(`/api/v1/skills/audit/${encId(skill.id)}`, token, { allow404: true }).catch((err) => {
-      console.error(`  WARN audits ${skill.id}: ${err.message}`);
-      return undefined;
-    });
-    if (raw !== undefined) audits = raw?.audits ?? []; // 404 = nobody audited yet
-  }
+  const unchanged = !!detail.hash && detail.hash === prev?.hash;
+  const row = {
+    ...skill,
+    hash: detail.hash ?? null,
+    fetchedAt: unchanged && prev.fetchedAt ? prev.fetchedAt : new Date().toISOString(),
+  };
+  await maybeAttachAudits(row, prev, token);
+  return { row, action: dirExists ? "updated" : "saved" };
+}
 
-  const row = { ...skill, hash, contentSaved, fetchedAt };
-  if (noSnapshot) row.noSnapshot = true;
-  if (audits !== undefined) row.audits = audits;
-  return { row, action };
+// With --audits, attach partner audit results unless the previous row already
+// has them (404 = nobody audited the skill yet -> empty array).
+async function maybeAttachAudits(row, prev, token) {
+  if (!WANT_AUDITS || prev?.audits !== undefined) return;
+  const raw = await apiGet(`/api/v1/skills/audit/${encId(row.id)}`, token, { allow404: true }).catch((err) => {
+    console.error(`  WARN audits ${row.id}: ${err.message}`);
+    return undefined;
+  });
+  if (raw !== undefined) row.audits = raw?.audits ?? [];
 }
 
 const token = await loadToken();
@@ -200,35 +220,28 @@ const rows = [];
 let index = 0;
 let done = 0;
 let saved = 0;
-let reused = 0;
+let updated = 0;
+let dropped = 0;
 const failed = [];
 const worker = async () => {
   while (index < targets.length) {
     const skill = targets[index++];
-    const prev = prevIndex.get(skill.id);
     try {
-      const { row, action } = await fetchSkill(skill, prev, token);
-      rows.push(row);
-      action === "saved" ? saved++ : reused++;
+      const { row, action } = await fetchSkill(skill, prevIndex.get(skill.id), token);
+      if (row) rows.push(row);
+      if (action === "saved") saved++;
+      else if (action === "updated") updated++;
+      else dropped++;
     } catch (err) {
       // Per-skill failures (bad upstream ids, dead repos) don't fail the run:
-      // they are recorded on the row, retried on the next run, and stay
-      // queryable in the index. Only systemic failures (leaderboard, auth,
-      // index write) abort the process with a non-zero exit code.
+      // the skill is left out of the index and retried on the next run. Only
+      // systemic failures (leaderboard, auth, index write) abort the process
+      // with a non-zero exit code.
       failed.push(skill.id);
       console.error(`  FAIL ${skill.id}: ${err.message}`);
-      rows.push({
-        ...skill,
-        hash: prev?.hash ?? null,
-        contentSaved: prev?.contentSaved ?? false,
-        fetchedAt: prev?.fetchedAt ?? null,
-        error: err.message,
-        ...(prev?.noSnapshot && { noSnapshot: true }),
-        ...(prev?.audits !== undefined && { audits: prev.audits }),
-      });
     }
     if (++done % 100 === 0 || done === targets.length) {
-      console.error(`  details: ${done}/${targets.length} (saved ${saved}, reused ${reused}, failed ${failed.length})`);
+      console.error(`  details: ${done}/${targets.length} (saved ${saved}, updated ${updated}, dropped ${dropped}, failed ${failed.length})`);
     }
   }
 };
@@ -243,4 +256,4 @@ await writeFile(tmpIndex, rows.sort((a, b) => b.installs - a.installs).map((row)
 await rename(tmpIndex, indexPath);
 await rm(path.join(OUT_DIR, ".tmp"), { recursive: true, force: true });
 
-console.error(`Done: saved=${saved}, reused=${reused}, failed=${failed.length} -> ${OUT_DIR}/`);
+console.error(`Done: saved=${saved}, updated=${updated}, dropped=${dropped}, failed=${failed.length} -> ${OUT_DIR}/`);

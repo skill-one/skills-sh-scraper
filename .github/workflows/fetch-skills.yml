@@ -16,7 +16,9 @@ concurrency: skills-fetch
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Every run re-downloads and rewrites all content (~8.4k requests) and the
+    # resume check repeats it, so budget for two full passes.
+    timeout-minutes: 120
 
     steps:
       - uses: actions/checkout@v4
@@ -48,19 +50,19 @@ jobs:
       - name: Scrape all skills
         run: node scraper.mjs
 
-      # Resume must hold on real data: a second run re-saves almost nothing —
-      # only skills whose first-pass fetch hit a transient error. Re-saving
-      # most skills would mean resume is broken. Per-skill upstream failures
-      # (permanent 400s) are expected; the scraper exits non-zero only on
-      # systemic failures.
+      # The previous skills.jsonl drives resume: a second run rewrites all
+      # content by design, so it must save nothing new — mass `saved` would
+      # mean the index is not being read or written correctly. Per-skill
+      # upstream failures (permanent 400s) are expected; the scraper exits
+      # non-zero only on systemic failures.
       - name: Resume check
         run: |
           set -o pipefail
           node scraper.mjs 2>&1 | tee resume.log
-          saved=$(sed -nE 's/.*Done: saved=([0-9]+).*/\1/p' resume.log | tail -1)
+          saved=$(sed -nE 's/.*saved=([0-9]+).*/\1/p' <<<"$(tail -1 resume.log)")
           total=$(grep -c '' data/skills.jsonl)
-          echo "resume re-saved ${saved} of ${total} skills"
-          [ "$saved" -le $((total / 100 + 1)) ] || { echo "resume broken: too many re-saves"; exit 1; }
+          echo "resume saved ${saved} of ${total} skills"
+          [ "$saved" -le $((total / 100 + 1)) ] || { echo "resume broken: too many saves"; exit 1; }
 
       # Layer 2: dataset invariants gate the publish.
       - name: Verify dataset

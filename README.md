@@ -19,7 +19,7 @@ Or produce it yourself: `node scraper.mjs` — see [DEVELOPING.md](DEVELOPING.md
 
 ```
 data/
-├── skills.jsonl   one row per skill, sorted by installs (desc) — query / filter / rank here
+├── skills.jsonl   one row per saved skill, sorted by installs (desc) — query / filter / rank here
 └── skills/        one directory per skill — read / copy files here
     ├── vercel-labs__skills__find-skills/     skill id with "/" → "__"
     │   └── SKILL.md
@@ -27,18 +27,17 @@ data/
         └── SKILL.md
 ```
 
-A skill directory contains exactly the files the upstream skill ships — copy it straight into an agent's skills folder. Both index and content are integrity-checked after every run, so a directory that exists is complete.
+A skill directory contains exactly the files the upstream skill ships — copy it straight into an agent's skills folder. The index and the content directories match exactly — a row exists if and only if its directory exists — and a directory that exists is complete. Both are integrity-checked after every run.
 
-`skills.jsonl` rows carry the skills.sh leaderboard fields (`id`, `slug`, `name`, `source`, `sourceType`, `installs`, `installUrl`, `url`, optional `isDuplicate`) plus:
+`skills.jsonl` rows carry the skills.sh leaderboard fields (`id`, `slug`, `name`, `source`, `sourceType`, `installs`, `installUrl`, `url`) plus:
 
 | Field | Meaning |
 |---|---|
 | `hash` | SHA-256 of the skill's files; `null` if unknown |
-| `contentSaved` | files are on disk under `skills/` |
-| `noSnapshot` | present when skills.sh has no file snapshot for the skill |
-| `fetchedAt` | when the content was last fetched |
+| `fetchedAt` | when the current content version was first fetched; carried over while the hash is unchanged (content itself is re-downloaded every run) |
 | `audits` | with `--audits`: partner audit results (`provider`, `status`, `riskLevel`, …); `[]` = none yet |
-| `error` | this skill's fetch failed on the last run; retried next run |
+
+Skills left out of the index: duplicates (`isDuplicate` on the leaderboard), skills with no upstream file snapshot, and skills whose fetch failed. Each run retries them; the run log counts them as `dropped` / `failed`.
 
 ## Using the data
 
