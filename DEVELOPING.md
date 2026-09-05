@@ -31,10 +31,11 @@ node scraper.mjs --out ./data             # custom output directory
 node scraper.mjs --audits                 # also fetch security audits (doubles request count)
 ```
 
-- The API allows 600 req/min; the scraper paces itself at 590/min (concurrency 10) and retries `429`/`503` honoring `Retry-After`, plus transient network errors.
+- The API allows 600 req/min; the scraper paces itself at 590/min (concurrency 10) and retries `429` and `5xx` honoring `Retry-After`, plus transient network errors. `4xx` are never retried: they are deterministic.
 - Content is fully re-downloaded and rewritten every run (~8,400 requests, 15–30 min). The previous `skills.jsonl` only pins `fetchedAt`: skills whose upstream hash is unchanged keep the `fetchedAt` of the run that first fetched that content version. Interrupted scrapes resume, and upstream edits are picked up automatically.
 - The index holds only skills whose content is on disk: duplicate skills and skills without an upstream snapshot are left out (logged, counted in the `Done:` summary, retried next run). A skill whose fetch failed keeps its previous index row and content directory, so the mirror keeps serving the last good content and the row ⟺ directory invariant holds; skills never fetched successfully stay out of the index. With `--limit`, skills outside the limit keep their previous rows too (the limit constrains only what is fetched, never the index; the next full run re-evaluates them). All of these count as `carried over`. The process exits non-zero only for systemic failures (auth, leaderboard, index write).
 - With `--audits`, audit results are re-fetched only for skills whose content hash changed; unchanged skills reuse the previous results without a request.
+- Known upstream limitation: skills whose slug contains `/` (e.g. `claude-office-skills/skills/facebook/meta-ads`) always fail the detail fetch with HTTP 400 — the API only routes `/{owner}/{repo}/{skill}` and cannot address such ids (no encoding works). They fail fast, show up in `stats.json` → `failedIds`, and are retried every run in case upstream adds support.
 
 ## Verification
 
