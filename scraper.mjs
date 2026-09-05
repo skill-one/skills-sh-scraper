@@ -11,9 +11,11 @@
  *   data/skills/{owner}__{repo}__{slug}/    pure skill files, nothing else
  *
  * The index lists exactly the skills with content on disk: one row if and
- * only if the skill's directory exists. Duplicate skills, skills without an
- * upstream snapshot, and skills whose fetch failed are left out (and retried
- * on the next run); the final summary counts them.
+ * only if the skill's directory exists. Duplicate skills and skills without
+ * an upstream snapshot are left out (and retried on the next run). A skill
+ * whose fetch fails keeps its previous snapshot — index row and content
+ * directory — until a later run fetches it again; skills never fetched
+ * successfully stay out of the index. The final summary counts all of them.
  *
  * Usage:
  *   node scraper.mjs                    # full scrape into ./data
@@ -30,17 +32,14 @@
  * up on the next run.
  */
 
-import { access, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { argValue, dirName, exists, safeSegment } from "./lib.mjs";
 
 const API_BASE = (process.env.SKILLS_API_BASE ?? "https://skills.sh").replace(/\/+$/, "");
 const args = process.argv.slice(2);
-const argValue = (flag) => {
-  const i = args.indexOf(flag);
-  return i === -1 ? undefined : args[i + 1];
-};
-const OUT_DIR = argValue("--out") ?? "data";
-const DETAIL_LIMIT = argValue("--limit") ? Number(argValue("--limit")) : Infinity;
+const OUT_DIR = argValue(args, "--out") ?? "data";
+const DETAIL_LIMIT = argValue(args, "--limit") ? Number(argValue(args, "--limit")) : Infinity;
 const WANT_AUDITS = args.includes("--audits");
 const CONCURRENCY = 10; // API rate limit is 600 req/min per (team, project)
 
@@ -109,14 +108,10 @@ async function apiGet(pathname, token, { allow404 = false } = {}) {
   }
 }
 
-// Ids are "owner/repo/slug" (github) or "domain/slug" (well-known); file paths
-// are relative. Each segment is mapped to a filesystem-safe name ("." and ".."
-// become "_") and the segments are joined with "__", so one skill is exactly
-// one directory that can never escape the output directory.
-const safeSegment = (s) => (s === "." || s === ".." ? "_" : s.replace(/[^\w.-]/g, "_"));
+// Ids are "owner/repo/slug" (github) or "domain/slug" (well-known). Directory
+// names are derived in lib.mjs; `encId` percent-encodes each segment for URLs.
 const encId = (id) => id.split("/").map(encodeURIComponent).join("/");
-const skillDir = (id) => path.join(OUT_DIR, "skills", id.split("/").map(safeSegment).join("__"));
-const exists = (p) => access(p).then(() => true, () => false);
+const skillDir = (id) => path.join(OUT_DIR, "skills", dirName(id));
 
 async function fetchLeaderboard(token) {
   const skills = [];
@@ -169,12 +164,13 @@ async function fetchSkill(skill, prev, token) {
   }
 
   const dirExists = await exists(dir);
-  // Write to a temp dir and rename, so "directory exists" implies "complete".
-  // An outdated directory has to be removed first (rename(2) cannot replace a
-  // non-empty directory); a crash in that window leaves the row without
-  // content, which the next run simply re-fetches.
-  if (dirExists) await rm(dir, { recursive: true, force: true });
-  const tmp = path.join(OUT_DIR, ".tmp", ...skill.id.split("/").map(safeSegment));
+  // Write to a temp dir and swap it in via rename(2), so "directory exists"
+  // implies "complete". The old content is parked inside .tmp first because
+  // rename(2) cannot replace a non-empty directory; if the swap fails it is
+  // restored, and a crash in the tiny window between the two renames leaves
+  // recoverable content in .tmp (flagged by the leftover check in verify.mjs).
+  const tmp = path.join(OUT_DIR, ".tmp", dirName(skill.id));
+  const parked = path.join(OUT_DIR, ".tmp", "old", dirName(skill.id));
   await rm(tmp, { recursive: true, force: true });
   for (const file of detail.files) {
     const target = path.join(tmp, ...file.path.split("/").map(safeSegment));
@@ -182,7 +178,19 @@ async function fetchSkill(skill, prev, token) {
     await writeFile(target, file.contents ?? "");
   }
   await mkdir(path.dirname(dir), { recursive: true });
-  await rename(tmp, dir);
+  if (dirExists) {
+    await mkdir(path.dirname(parked), { recursive: true });
+    await rename(dir, parked);
+    try {
+      await rename(tmp, dir);
+    } catch (err) {
+      await rename(parked, dir); // swap failed: put the old content back
+      throw err;
+    }
+    await rm(parked, { recursive: true, force: true });
+  } else {
+    await rename(tmp, dir);
+  }
 
   const unchanged = !!detail.hash && detail.hash === prev?.hash;
   const row = {
@@ -190,19 +198,26 @@ async function fetchSkill(skill, prev, token) {
     hash: detail.hash ?? null,
     fetchedAt: unchanged && prev.fetchedAt ? prev.fetchedAt : new Date().toISOString(),
   };
-  await maybeAttachAudits(row, prev, token);
+  await maybeAttachAudits(row, prev, unchanged, token);
   return { row, action: dirExists ? "updated" : "saved" };
 }
 
-// With --audits, attach partner audit results unless the previous row already
-// has them (404 = nobody audited the skill yet -> empty array).
-async function maybeAttachAudits(row, prev, token) {
-  if (!WANT_AUDITS || prev?.audits !== undefined) return;
+// With --audits, attach partner audit results. They are re-fetched whenever
+// the skill's content changed (or on the first fetch); while the hash is
+// unchanged the previous results are reused without a request. A failed audit
+// request keeps the previous results; 404 = nobody audited the skill yet.
+async function maybeAttachAudits(row, prev, unchanged, token) {
+  if (!WANT_AUDITS) return;
+  if (prev?.audits !== undefined && unchanged) {
+    row.audits = prev.audits;
+    return;
+  }
   const raw = await apiGet(`/api/v1/skills/audit/${encId(row.id)}`, token, { allow404: true }).catch((err) => {
     console.error(`  WARN audits ${row.id}: ${err.message}`);
     return undefined;
   });
   if (raw !== undefined) row.audits = raw?.audits ?? [];
+  else if (prev?.audits !== undefined) row.audits = prev.audits;
 }
 
 const token = await loadToken();
@@ -222,6 +237,7 @@ let done = 0;
 let saved = 0;
 let updated = 0;
 let dropped = 0;
+let carried = 0;
 const failed = [];
 const worker = async () => {
   while (index < targets.length) {
@@ -234,11 +250,19 @@ const worker = async () => {
       else dropped++;
     } catch (err) {
       // Per-skill failures (bad upstream ids, dead repos) don't fail the run:
-      // the skill is left out of the index and retried on the next run. Only
-      // systemic failures (leaderboard, auth, index write) abort the process
-      // with a non-zero exit code.
+      // the skill is retried on the next run. Its previous snapshot, if any,
+      // stays on disk, so keep the matching index row — index and content
+      // directories keep matching, and the mirror keeps serving the last good
+      // content. Skills never fetched successfully stay out of the index.
+      // Only systemic failures (leaderboard, auth, index write) abort the
+      // process with a non-zero exit code.
       failed.push(skill.id);
       console.error(`  FAIL ${skill.id}: ${err.message}`);
+      const prev = prevIndex.get(skill.id);
+      if (prev && (await exists(skillDir(skill.id)))) {
+        rows.push(prev);
+        carried++;
+      }
     }
     if (++done % 100 === 0 || done === targets.length) {
       console.error(`  details: ${done}/${targets.length} (saved ${saved}, updated ${updated}, dropped ${dropped}, failed ${failed.length})`);
@@ -247,13 +271,17 @@ const worker = async () => {
 };
 await Promise.all(Array.from({ length: Math.min(CONCURRENCY, targets.length) }, worker));
 
-// Sort by installs desc: workers finish out of order, so the index row order
-// would otherwise be nondeterministic. Skills no longer listed are dropped.
-// Written atomically so the index is never half-updated.
+// Sort by installs desc, ties by id: workers finish out of order, so the row
+// order would otherwise be nondeterministic and daily snapshots would differ
+// even without real changes. Skills no longer listed are dropped. Written
+// atomically so the index is never half-updated.
+const byRank = (a, b) => b.installs - a.installs || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 const indexPath = path.join(OUT_DIR, "skills.jsonl");
 const tmpIndex = `${indexPath}.tmp`;
-await writeFile(tmpIndex, rows.sort((a, b) => b.installs - a.installs).map((row) => JSON.stringify(row)).join("\n") + (rows.length ? "\n" : ""));
+await writeFile(tmpIndex, rows.sort(byRank).map((row) => JSON.stringify(row)).join("\n") + (rows.length ? "\n" : ""));
 await rename(tmpIndex, indexPath);
 await rm(path.join(OUT_DIR, ".tmp"), { recursive: true, force: true });
 
-console.error(`Done: saved=${saved}, updated=${updated}, dropped=${dropped}, failed=${failed.length} -> ${OUT_DIR}/`);
+console.error(`Done: saved=${saved}, updated=${updated}, dropped=${dropped}, failed=${failed.length} (carried over: ${carried}) -> ${OUT_DIR}/`);
+// Machine-readable summary for CI checks (e.g. the workflow's resume check).
+console.error(`metrics ${JSON.stringify({ saved, updated, dropped, failed: failed.length, carried })}`);

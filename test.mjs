@@ -1,10 +1,12 @@
 // End-to-end test: runs scraper.mjs against a local mock of the skills.sh API.
 // No real token, no network. Covers: pagination (with leaderboard drift),
-// skills.jsonl index shape (only saved skills — duplicates, no-snapshot skills
-// and failed fetches are omitted), pure content directories, path
-// sanitization, full re-write every run with fetchedAt pinned to the content
-// hash via the previous index, .env.local token loading, 429 retry honoring
-// Retry-After, --audits.
+// skills.jsonl index shape (only saved skills — duplicates and no-snapshot
+// skills are omitted; skills whose fetch failed keep their previous row and
+// content), pure content directories, path sanitization, full re-write every
+// run with fetchedAt pinned to the content hash via the previous index,
+// .env.local token loading, 429 retry honoring Retry-After, --audits (kept
+// while the hash is unchanged, re-fetched when it changes), deterministic
+// installs-desc/id-asc row order, and verifier rejection of tampered datasets.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -35,8 +37,12 @@ const FILES = {
   "owner/repo/wei rd~x": [{ path: "SKILL.md", contents: "# weird slug\n" }],
   "owner/repo/dup-skill": [{ path: "SKILL.md", contents: "# duplicate\n" }],
   "owner/repo/rate-limited": null, // no upstream snapshot: hash null, files null
-  "owner/repo/bad-id": null, // upstream rejects the detail request outright
+  "owner/repo/bad-id": [{ path: "SKILL.md", contents: "# bad-id\n" }], // detail 400s while badIdBroken
 };
+
+// "bad-id" rejects the detail request outright until repaired — used to test
+// that a failed fetch carries over the previous snapshot on the next run.
+let badIdBroken = true;
 
 const filesFor = (id) => (id === "vercel-labs/skills/find-skills" ? findSkillsFiles(findSkillsRev) : FILES[id]);
 
@@ -49,7 +55,9 @@ const AUDITS = {
 const SKILLS = [
   { id: "vercel-labs/skills/find-skills", slug: "find-skills", name: "find-skills", source: "vercel-labs/skills", installs: 12345, sourceType: "github", installUrl: "npx skills add vercel-labs/skills/find-skills", url: "https://skills.sh/vercel-labs/skills/find-skills" },
   { id: "mintlify.com/mintlify", slug: "mintlify", name: "mintlify", source: "mintlify.com", installs: 99, sourceType: "well-known", installUrl: "npx skills add mintlify.com/mintlify", url: "https://skills.sh/mintlify.com/mintlify" },
-  { id: "owner/repo/wei rd~x", slug: "wei rd~x", name: "weird", source: "owner/repo", installs: 3, sourceType: "github", installUrl: "npx skills add owner/repo/wei rd~x", url: "https://skills.sh/owner/repo/wei rd~x" },
+  // installs ties with mintlify (both 99): exercises the id tiebreak — the
+  // expected order below is the id-ascending one.
+  { id: "owner/repo/wei rd~x", slug: "wei rd~x", name: "weird", source: "owner/repo", installs: 99, sourceType: "github", installUrl: "npx skills add owner/repo/wei rd~x", url: "https://skills.sh/owner/repo/wei rd~x" },
   { id: "owner/repo/dup-skill", slug: "dup-skill", name: "dup", source: "owner/repo", installs: 2, sourceType: "github", installUrl: "npx skills add owner/repo/dup-skill", url: "https://skills.sh/owner/repo/dup-skill", isDuplicate: true },
   { id: "owner/repo/rate-limited", slug: "rate-limited", name: "rl", source: "owner/repo", installs: 1, sourceType: "github", installUrl: "npx skills add owner/repo/rate-limited", url: "https://skills.sh/owner/repo/rate-limited" },
   { id: "owner/repo/bad-id", slug: "bad-id", name: "bad", source: "owner/repo", installs: 0, sourceType: "github", installUrl: "npx skills add owner/repo/bad-id", url: "https://skills.sh/owner/repo/bad-id" },
@@ -87,8 +95,8 @@ test("scraper end-to-end against mock API", async () => {
       return;
     }
     hits.detail++;
-    if (id === "owner/repo/bad-id") {
-      res.statusCode = 400; // permanently broken upstream id
+    if (id === "owner/repo/bad-id" && badIdBroken) {
+      res.statusCode = 400; // permanently broken upstream id (while badIdBroken)
       res.end(JSON.stringify({ error: "bad_request" }));
       return;
     }
@@ -225,6 +233,49 @@ test("scraper end-to-end against mock API", async () => {
     assert.deepEqual(rows4[0].audits, AUDITS["vercel-labs/skills/find-skills"]);
     assert.deepEqual(rows4[1].audits, []); // audited by nobody -> empty array
 
+    // --- run 5: repairing bad-id lets it save (into out1, where it has
+    // never had content)
+    badIdBroken = false;
+    const r5 = await run(out1);
+    assert.equal(r5.status, 0, `run 5 failed:\n${r5.stderr}`);
+    assert.match(r5.stderr, /saved=1, updated=3, dropped=2, failed=0/);
+    const rows5 = await readRows(out1);
+    assert.deepEqual(rows5.map((r) => r.id), [...rows1.map((r) => r.id), "owner/repo/bad-id"]);
+    assert.equal(await readFile(dir(out1, "owner__repo__bad-id", "SKILL.md"), "utf8"), FILES["owner/repo/bad-id"][0].contents);
+
+    // --- run 6: bad-id breaks again. Its previous snapshot stays on disk, so
+    // the previous index row must be carried over: index and directories keep
+    // matching (an orphan directory would fail verify) and the mirror keeps
+    // serving the last good content.
+    badIdBroken = true;
+    const r6 = await run(out1);
+    assert.equal(r6.status, 0, `run 6 failed:\n${r6.stderr}`);
+    assert.match(r6.stderr, /saved=0, updated=3, dropped=2, failed=1 \(carried over: 1\)/);
+    assert.match(r6.stderr, /"failed":1,"carried":1/); // machine-readable metrics line
+    const rows6 = await readRows(out1);
+    assert.deepEqual(rows6[3], rows5[3]); // carried over verbatim: same hash, fetchedAt, fields
+    assert.equal(await readFile(dir(out1, "owner__repo__bad-id", "SKILL.md"), "utf8"), FILES["owner/repo/bad-id"][0].contents);
+
+    // --- run 7 (--audits, out2): unchanged content reuses the previous audit
+    // results without any audit request
+    const auditHitsAfterRun4 = hits.audit;
+    const r7 = await run(out2, ["--audits"]);
+    assert.equal(r7.status, 0, `run 7 failed:\n${r7.stderr}`);
+    assert.equal(hits.audit, auditHitsAfterRun4); // no re-fetch while hashes are unchanged
+    const rows7 = await readRows(out2);
+    assert.deepEqual(rows7[0].audits, AUDITS["vercel-labs/skills/find-skills"]); // kept
+    assert.deepEqual(rows7[1].audits, []);
+
+    // --- run 8 (--audits, out2): an upstream edit changes the hash, so that
+    // skill's audits are re-fetched; the untouched skills keep theirs
+    findSkillsRev = 2;
+    const r8 = await run(out2, ["--audits"]);
+    assert.equal(r8.status, 0, `run 8 failed:\n${r8.stderr}`);
+    assert.equal(hits.audit, auditHitsAfterRun4 + 1); // exactly the edited skill re-audited
+    const rows8 = await readRows(out2);
+    assert.equal(rows8[0].hash, hashOf("vercel-labs/skills/find-skills:2"));
+    assert.deepEqual(rows8[0].audits, AUDITS["vercel-labs/skills/find-skills"]);
+
     // --- artifact verifier accepts both datasets (default + audits modes)
     const verify = async (out) => {
       const child = spawn(process.execPath, [VERIFY, "--out", out], { cwd: workDir, env: process.env });
@@ -240,7 +291,7 @@ test("scraper end-to-end against mock API", async () => {
     };
     const v1 = await verify(out1);
     assert.equal(v1.status, 0, `verify out1 failed:\n${v1.stdout}${v1.stderr}`);
-    assert.match(v1.stdout, /OK: 3 rows, 3 content directories/);
+    assert.match(v1.stdout, /OK: 4 rows, 4 content directories/); // bad-id carried over from run 6
     const v2 = await verify(out2);
     assert.equal(v2.status, 0, `verify out2 failed:\n${v2.stdout}${v2.stderr}`);
     assert.match(v2.stdout, /OK: 3 rows, 3 content directories/);
@@ -271,6 +322,21 @@ test("scraper end-to-end against mock API", async () => {
     const t4 = await verify(out1);
     assert.equal(t4.status, 1);
     assert.match(t4.stderr, /skills\.jsonl\.tmp/);
+    // 5. equal-installs rows out of id order (find-skills ties with mintlify)
+    const tied = (await readRows(out1)).map((r, i) => (i === 0 ? { ...r, installs: 99 } : r));
+    await writeFile(path.join(out1, "skills.jsonl"), tied.map((r) => JSON.stringify(r)).join("\n") + "\n");
+    const t5 = await verify(out1);
+    assert.equal(t5.status, 1);
+    assert.match(t5.stderr, /not sorted by id/);
+    // 6. two ids sanitizing to the same directory name
+    const colliding = (await readRows(out1)).map((r) => ({ ...r }));
+    colliding[1].id = "owner/repo/a b";
+    colliding.splice(2, 0, { ...colliding[1], id: "owner/repo/a_b" }); // both -> owner__repo__a_b
+    await writeFile(path.join(out1, "skills.jsonl"), colliding.map((r) => JSON.stringify(r)).join("\n") + "\n");
+    const t6 = await verify(out1);
+    assert.equal(t6.status, 1);
+    assert.match(t6.stderr, /collides/);
+    await writeFile(path.join(out1, "skills.jsonl"), rows6.map((r) => JSON.stringify(r)).join("\n") + "\n");
   } finally {
     server.close();
     await rm(workDir, { recursive: true, force: true });

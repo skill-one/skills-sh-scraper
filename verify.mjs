@@ -3,9 +3,10 @@
  * Verify the integrity of a scraped dataset — no network, no token.
  *
  * Checks skills.jsonl + content directories against the scraper's invariants:
- *   - every line parses; ids unique; rows sorted by installs desc
+ *   - every line parses; ids unique; rows sorted by installs desc (ties by id)
  *   - required fields well-formed (id, sourceType, installs, fetchedAt, hash,
  *     audits)
+ *   - no two rows share a sanitized directory name
  *   - rows and content directories match exactly, in both directions: every
  *     row has a non-empty directory (its files mirror the upstream skill
  *     verbatim, including files like _meta.json that skills may ship) and
@@ -15,21 +16,12 @@
  * Usage: node verify.mjs [--out data]
  */
 
-import { access, readdir, readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import { argValue, dirName, exists } from "./lib.mjs";
 
 const args = process.argv.slice(2);
-const argValue = (flag) => {
-  const i = args.indexOf(flag);
-  return i === -1 ? undefined : args[i + 1];
-};
-const OUT_DIR = argValue("--out") ?? "data";
-
-// Must match scraper.mjs exactly.
-const safeSegment = (s) => (s === "." || s === ".." ? "_" : s.replace(/[^\w.-]/g, "_"));
-const dirName = (id) => id.split("/").map(safeSegment).join("__");
-
-const exists = (p) => access(p).then(() => true, () => false);
+const OUT_DIR = argValue(args, "--out") ?? "data";
 const isHash = (v) => typeof v === "string" && /^[0-9a-f]{64}$/i.test(v);
 const isIso = (v) => typeof v === "string" && !Number.isNaN(Date.parse(v));
 
@@ -73,19 +65,20 @@ if (text === null) {
     seen.add(row.id);
   }
   for (let i = 1; i < rows.length; i++) {
-    if (rows[i - 1].installs < rows[i].installs) {
-      problem(`rows not sorted by installs desc at ${rows[i].id}`);
-      break;
-    }
+    if (rows[i - 1].installs < rows[i].installs) problem(`rows not sorted by installs desc at ${rows[i].id}`);
+    else if (rows[i - 1].installs === rows[i].installs && rows[i - 1].id > rows[i].id)
+      problem(`equal-installs rows not sorted by id at ${rows[i].id}`);
   }
 
   // Rows and directories must match exactly, in both directions.
-  const rowNames = new Set();
+  const rowNames = new Map();
   for (const row of rows) {
     const label = checkRow(row);
     if (typeof row.id !== "string") continue;
-    rowNames.add(dirName(row.id));
-    const dir = path.join(OUT_DIR, "skills", dirName(row.id));
+    const name = dirName(row.id);
+    if (rowNames.has(name)) problem(`${label}: directory name collides with another row (${rowNames.get(name)})`);
+    rowNames.set(name, row.id);
+    const dir = path.join(OUT_DIR, "skills", name);
     if (!(await exists(dir))) {
       problem(`${label}: index row has no content directory`);
       continue;

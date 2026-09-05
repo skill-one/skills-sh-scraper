@@ -19,7 +19,7 @@ Or produce it yourself: `node scraper.mjs` — see [DEVELOPING.md](DEVELOPING.md
 
 ```
 data/
-├── skills.jsonl   one row per saved skill, sorted by installs (desc) — query / filter / rank here
+├── skills.jsonl   one row per saved skill, sorted by installs desc (ties by id) — query / filter / rank here
 └── skills/        one directory per skill — read / copy files here
     ├── vercel-labs__skills__find-skills/     skill id with "/" → "__"
     │   └── SKILL.md
@@ -35,9 +35,9 @@ A skill directory contains exactly the files the upstream skill ships — copy i
 |---|---|
 | `hash` | SHA-256 of the skill's files; `null` if unknown |
 | `fetchedAt` | when the current content version was first fetched; carried over while the hash is unchanged (content itself is re-downloaded every run) |
-| `audits` | with `--audits`: partner audit results (`provider`, `status`, `riskLevel`, …); `[]` = none yet |
+| `audits` | with `--audits`: partner audit results (`provider`, `status`, `riskLevel`, …); `[]` = none yet. Reused while the content hash is unchanged, re-fetched when it changes |
 
-Skills left out of the index: duplicates (`isDuplicate` on the leaderboard), skills with no upstream file snapshot, and skills whose fetch failed. Each run retries them; the run log counts them as `dropped` / `failed`.
+Skills left out of the index: duplicates (`isDuplicate` on the leaderboard) and skills with no upstream file snapshot. A skill whose fetch failed keeps its previous snapshot — index row plus content directory — until a later run fetches it again; skills never fetched successfully are left out. All of them are retried every run; the run log counts them as `dropped` / `failed` (previously saved ones as `carried over`).
 
 ## Using the data
 
