@@ -30,7 +30,7 @@ node scraper.mjs --audits                 # also fetch security audit results (d
 node scraper.mjs --skip-duplicates        # don't fetch content of isDuplicate skills (metadata still recorded)
 ```
 
-A full scrape is ~8,400 detail requests; at the API's 600 req/min rate limit expect roughly 15–30 minutes (double with `--audits`). Re-running is safe: content from previous runs is reused, so an interrupted scrape resumes where it stopped. The process exits non-zero if any skill failed; failures are logged to stderr.
+A full scrape is ~8,400 detail requests; at the API's 600 req/min rate limit expect roughly 15–30 minutes (double with `--audits`). Re-running is safe: content from previous runs is reused, so an interrupted scrape resumes where it stopped. Per-skill failures (e.g. upstream ids the API rejects) are recorded in an `error` field on their index row and retried on the next run — the process exits non-zero only for systemic failures (auth, leaderboard, index write).
 
 ## Output
 
@@ -60,6 +60,7 @@ Row fields: the leaderboard object (`id`, `slug`, `name`, `source`, `sourceType`
 | `noSnapshot` | present when skills.sh has no file snapshot for the skill (`contentSaved` is then `false`) |
 | `fetchedAt` | when the content was last fetched from the API |
 | `audits` | with `--audits`: array of partner audit results (`provider`, `status`, `riskLevel`, …); `[]` means nobody audited it yet |
+| `error` | present when this skill's detail request failed on the last run (e.g. `HTTP 400` for broken upstream ids); retried automatically on the next run |
 
 ## Consuming the data
 

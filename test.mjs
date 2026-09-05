@@ -28,6 +28,7 @@ const FILES = {
   "owner/repo/wei rd~x": [{ path: "SKILL.md", contents: "# weird slug\n" }],
   "owner/repo/dup-skill": [{ path: "SKILL.md", contents: "# duplicate\n" }],
   "owner/repo/rate-limited": null, // no upstream snapshot: hash null, files null
+  "owner/repo/bad-id": null, // upstream rejects the detail request outright
 };
 
 const AUDITS = {
@@ -42,6 +43,7 @@ const SKILLS = [
   { id: "owner/repo/wei rd~x", slug: "wei rd~x", name: "weird", source: "owner/repo", installs: 3, sourceType: "github", installUrl: "npx skills add owner/repo/wei rd~x", url: "https://skills.sh/owner/repo/wei rd~x" },
   { id: "owner/repo/dup-skill", slug: "dup-skill", name: "dup", source: "owner/repo", installs: 2, sourceType: "github", installUrl: "npx skills add owner/repo/dup-skill", url: "https://skills.sh/owner/repo/dup-skill", isDuplicate: true },
   { id: "owner/repo/rate-limited", slug: "rate-limited", name: "rl", source: "owner/repo", installs: 1, sourceType: "github", installUrl: "npx skills add owner/repo/rate-limited", url: "https://skills.sh/owner/repo/rate-limited" },
+  { id: "owner/repo/bad-id", slug: "bad-id", name: "bad", source: "owner/repo", installs: 0, sourceType: "github", installUrl: "npx skills add owner/repo/bad-id", url: "https://skills.sh/owner/repo/bad-id" },
 ];
 
 test("scraper end-to-end against mock API", async () => {
@@ -75,6 +77,11 @@ test("scraper end-to-end against mock API", async () => {
       return;
     }
     hits.detail++;
+    if (id === "owner/repo/bad-id") {
+      res.statusCode = 400; // permanently broken upstream id
+      res.end(JSON.stringify({ error: "bad_request" }));
+      return;
+    }
     if (id === "owner/repo/rate-limited" && hits.rateLimited++ === 0) {
       res.statusCode = 429;
       res.setHeader("retry-after", "0");
@@ -98,7 +105,7 @@ test("scraper end-to-end against mock API", async () => {
   const run = async (out, flags = []) => {
     const env = { ...process.env, SKILLS_API_BASE: base };
     delete env.VERCEL_OIDC_TOKEN; // force the .env.local fallback
-    const child = spawn(process.execPath, [SCRAPER, "--out", out, "--limit", "5", ...flags], { cwd: workDir, env });
+    const child = spawn(process.execPath, [SCRAPER, "--out", out, "--limit", "6", ...flags], { cwd: workDir, env });
     let stderr = "";
     child.stderr.on("data", (d) => (stderr += d));
     const code = await new Promise((resolve, reject) => {
@@ -116,12 +123,12 @@ test("scraper end-to-end against mock API", async () => {
     // --- run 1: default scrape saves everything, content dirs stay pure
     const r1 = await run(out1);
     assert.equal(r1.status, 0, `run 1 failed:\n${r1.stderr}`);
-    assert.equal(hits.list, 2); // 5 skills, 3 per mock page
-    assert.equal(hits.detail, 6); // 5 skills + one 429 retried
+    assert.equal(hits.list, 2); // 6 skills, 3 per mock page
+    assert.equal(hits.detail, 7); // 6 skills + one 429 retried (the 400 is not retried)
     assert.equal(hits.audit, 0); // flag off -> no audit requests
 
     const rows1 = await readRows(out1);
-    assert.equal(rows1.length, 5);
+    assert.equal(rows1.length, 6);
     assert.equal(rows1[0].id, "vercel-labs/skills/find-skills"); // leaderboard order kept
     assert.equal(rows1[0].installs, 12345);
     assert.equal(rows1[0].contentSaved, true);
@@ -149,25 +156,31 @@ test("scraper end-to-end against mock API", async () => {
     assert.equal(rows1[4].contentSaved, false);
     assert.equal(rows1[4].noSnapshot, true);
     assert.equal(rows1[4].hash, null);
+    // permanently failing skill: run still exits 0, error recorded on the row
+    assert.equal(await pathExists(dir(out1, "owner", "repo", "bad-id")), false);
+    assert.equal(rows1[5].contentSaved, false);
+    assert.match(rows1[5].error, /HTTP 400/);
     // no temp leftovers
     assert.equal(await pathExists(path.join(out1, ".tmp")), false);
 
-    // --- run 2: resume — everything reused, zero detail/audit requests
+    // --- run 2: resume — content reused; only the failed skill is retried
     const r2 = await run(out1);
     assert.equal(r2.status, 0, `run 2 failed:\n${r2.stderr}`);
-    assert.equal(hits.detail, 6); // unchanged
+    assert.equal(hits.detail, 8); // +1: the failed skill is retried (and fails again)
     assert.equal(hits.audit, 0);
-    assert.match(r2.stderr, /saved=0, reused=5/);
-    assert.equal((await readRows(out1)).length, 5);
+    assert.match(r2.stderr, /saved=0, reused=5, failed=1/);
+    const rows2 = await readRows(out1);
+    assert.equal(rows2.length, 6);
+    assert.match(rows2[5].error, /HTTP 400/);
 
     // --- run 3: fresh dir with --audits --skip-duplicates
     const r3 = await run(out2, ["--audits", "--skip-duplicates"]);
     assert.equal(r3.status, 0, `run 3 failed:\n${r3.stderr}`);
-    assert.equal(hits.detail, 10); // 4 new detail fetches: duplicate skipped
-    assert.equal(hits.audit, 5); // every skill audited; unaudited -> 404 -> []
+    assert.equal(hits.detail, 13); // +5 new fetches (no 429 retry left for rate-limited)
+    assert.equal(hits.audit, 5); // all but the failed skill (no audit after a detail error); unaudited -> 404 -> []
 
     const rows3 = await readRows(out2);
-    assert.equal(rows3.length, 5);
+    assert.equal(rows3.length, 6);
     assert.equal(await pathExists(dir(out2, "owner", "repo", "dup-skill")), false); // no content for duplicates
     assert.equal(rows3[3].contentSaved, false);
     assert.equal("noSnapshot" in rows3[3], false); // skipped by flag, not by upstream
@@ -189,7 +202,7 @@ test("scraper end-to-end against mock API", async () => {
     };
     const v1 = await verify(out1);
     assert.equal(v1.status, 0, `verify out1 failed:\n${v1.stdout}${v1.stderr}`);
-    assert.match(v1.stdout, /OK: 5 rows, 4 content directories/);
+    assert.match(v1.stdout, /OK: 6 rows, 4 content directories/);
     const v2 = await verify(out2);
     assert.equal(v2.status, 0, `verify out2 failed:\n${v2.stdout}${v2.stderr}`);
 

@@ -202,6 +202,10 @@ const worker = async () => {
       rows.push(row);
       action === "saved" ? saved++ : reused++;
     } catch (err) {
+      // Per-skill failures (bad upstream ids, dead repos) don't fail the run:
+      // they are recorded on the row, retried on the next run, and stay
+      // queryable in the index. Only systemic failures (leaderboard, auth,
+      // index write) abort the process with a non-zero exit code.
       failed.push(skill.id);
       console.error(`  FAIL ${skill.id}: ${err.message}`);
       rows.push({
@@ -209,6 +213,7 @@ const worker = async () => {
         hash: prev?.hash ?? null,
         contentSaved: prev?.contentSaved ?? false,
         fetchedAt: prev?.fetchedAt ?? null,
+        error: err.message,
         ...(prev?.noSnapshot && { noSnapshot: true }),
         ...(prev?.audits !== undefined && { audits: prev.audits }),
       });
@@ -230,4 +235,3 @@ await rename(tmpIndex, indexPath);
 await rm(path.join(OUT_DIR, ".tmp"), { recursive: true, force: true });
 
 console.error(`Done: saved=${saved}, reused=${reused}, failed=${failed.length} -> ${OUT_DIR}/`);
-if (failed.length) process.exitCode = 1;

@@ -45,6 +45,7 @@ function checkRow(row) {
   if (row.fetchedAt !== null && !isIso(row.fetchedAt)) problem(`${label}: bad fetchedAt`);
   if (row.hash !== null && !isHash(row.hash)) problem(`${label}: bad hash`);
   if ("audits" in row && !Array.isArray(row.audits)) problem(`${label}: audits must be an array`);
+  if ("error" in row && typeof row.error !== "string") problem(`${label}: error must be a string`);
   if (row.noSnapshot) {
     if (row.contentSaved !== false) problem(`${label}: noSnapshot but contentSaved=true`);
     if (row.hash !== null) problem(`${label}: noSnapshot but hash set`);
