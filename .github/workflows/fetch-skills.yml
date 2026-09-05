@@ -48,14 +48,19 @@ jobs:
       - name: Scrape all skills
         run: node scraper.mjs
 
-      # Resume must hold on real data: a second run reuses everything (no new
-      # saves). Per-skill upstream failures (bad ids) are expected and recorded
-      # in the index; the scraper exits non-zero only on systemic failures.
+      # Resume must hold on real data: a second run re-saves almost nothing —
+      # only skills whose first-pass fetch hit a transient error. Re-saving
+      # most skills would mean resume is broken. Per-skill upstream failures
+      # (permanent 400s) are expected; the scraper exits non-zero only on
+      # systemic failures.
       - name: Resume check
         run: |
           set -o pipefail
           node scraper.mjs 2>&1 | tee resume.log
-          grep -q "Done: saved=0," resume.log
+          saved=$(sed -nE 's/.*Done: saved=([0-9]+).*/\1/p' resume.log | tail -1)
+          total=$(grep -c '' data/skills.jsonl)
+          echo "resume re-saved ${saved} of ${total} skills"
+          [ "$saved" -le $((total / 100 + 1)) ] || { echo "resume broken: too many re-saves"; exit 1; }
 
       # Layer 2: artifact invariants gate the upload.
       - name: Verify artifacts

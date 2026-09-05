@@ -103,7 +103,7 @@ npm run scrape && npm run verify           # full scrape + integrity check
 ### GitHub Actions
 
 - **`ci.yml`** (push / PR): layer 1 on Node 22 and 24. No secrets involved, so it also runs on fork PRs.
-- **`fetch-skills.yml`** (daily 02:00 UTC + manual): layer 3 as a daily canary. It mints a fresh OIDC token from secrets (the OIDC token expires every ~12h, so it must never be stored — only the long-lived `VERCEL_TOKEN` is), runs offline tests first, scrapes everything, proves resume works on real data (a second run must report `saved=0`), runs `verify.mjs`, and only then uploads two artifacts: `skills-jsonl-*` (index) and `skills-content-*` (full mirror, 14-day retention).
+- **`fetch-skills.yml`** (daily 02:00 UTC + manual): layer 3 as a daily canary. It mints a fresh OIDC token from secrets (the OIDC token expires every ~12h, so it must never be stored — only the long-lived `VERCEL_TOKEN` is), runs offline tests first, scrapes everything, proves resume works on real data (a second run must re-save at most 1% of skills — the handful that hit transient errors), runs `verify.mjs`, and only then uploads two artifacts: `skills-jsonl-*` (index) and `skills-content-*` (full mirror, 14-day retention).
 
 Repository secrets required: `VERCEL_TOKEN` (Vercel personal access token), `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID` — copy the last two from `.vercel/project.json` after a local `vercel link`.
 

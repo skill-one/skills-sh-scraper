@@ -105,7 +105,7 @@ npm run scrape && npm run verify           # 全量抓取 + 完整性校验
 ### GitHub Actions
 
 - **`ci.yml`**（push / PR）：层 1，跑在 Node 22 和 24 上。不依赖任何 secrets，fork 的 PR 也能运行。
-- **`fetch-skills.yml`**（每日 02:00 UTC + 手动）：层 3，即每日金丝雀。它先用 secrets 现场换取新鲜的 OIDC token（OIDC token 约 12 小时过期，绝不能作为 secret 存储——只存长效的 `VERCEL_TOKEN`），先跑离线测试，再全量抓取，在真实数据上验证续抓（第二次运行必须 `saved=0`），然后运行 `verify.mjs`，全部通过才上传两个 artifact：`skills-jsonl-*`（索引）和 `skills-content-*`（完整镜像，保留 14 天）。
+- **`fetch-skills.yml`**（每日 02:00 UTC + 手动）：层 3，即每日金丝雀。它先用 secrets 现场换取新鲜的 OIDC token（OIDC token 约 12 小时过期，绝不能作为 secret 存储——只存长效的 `VERCEL_TOKEN`），先跑离线测试，再全量抓取，在真实数据上验证续抓（第二次运行重存数不得超过技能总数的 1%——即只允许个别瞬时错误），然后运行 `verify.mjs`，全部通过才上传两个 artifact：`skills-jsonl-*`（索引）和 `skills-content-*`（完整镜像，保留 14 天）。
 
 需要配置的仓库 secrets：`VERCEL_TOKEN`（Vercel 个人访问令牌）、`VERCEL_ORG_ID`、`VERCEL_PROJECT_ID`——后两项在本地 `vercel link` 后从 `.vercel/project.json` 里复制。
 
