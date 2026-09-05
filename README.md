@@ -90,7 +90,7 @@ Three layers, each answering a different question. All of them run identically l
 | 2. Artifact verifier | Is a scraped dataset intact? | nothing (no network) | `node verify.mjs --out data` |
 | 3. Real API run | Does the live API still behave? | Vercel OIDC token | `node scraper.mjs --limit 5 && node verify.mjs` |
 
-`verify.mjs` checks a dataset against the scraper's invariants: every JSONL line parses, ids are unique, rows are sorted by installs desc, fields are well-formed (`hash` is 64-hex or null, `audits` is an array, …), `contentSaved` matches the on-disk directories exactly, `noSnapshot` rows have no content, no `_meta.json`/`.tmp` junk survives. It is the gate before any dataset is trusted or uploaded.
+`verify.mjs` checks a dataset against the scraper's invariants: every JSONL line parses, ids are unique, rows are sorted by installs desc, fields are well-formed (`hash` is 64-hex or null, `audits` is an array, …), `contentSaved` matches the on-disk directories exactly, `noSnapshot` rows have no content, content directories are non-empty, and no `.tmp` leftovers from interrupted runs survive. It is the gate before any dataset is trusted or uploaded.
 
 ### Local
 

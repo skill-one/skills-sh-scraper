@@ -92,7 +92,7 @@ API 限制为每个 (team, project) 600 次/分钟。脚本以滚动窗口控制
 | 2. 产物校验器 | 抓下来的数据集是否完整？ | 无（不联网） | `node verify.mjs --out data` |
 | 3. 真实 API 运行 | 线上接口行为是否未变？ | Vercel OIDC token | `node scraper.mjs --limit 5 && node verify.mjs` |
 
-`verify.mjs` 按不变量校验数据集：JSONL 每行可解析、id 唯一、按 installs 降序、字段格式正确（`hash` 为 64 位 hex 或 null、`audits` 为数组等）、`contentSaved` 与磁盘目录严格对应、`noSnapshot` 行无内容、无 `_meta.json`/`.tmp` 残留。它是任何数据集被信任或上传前的门禁。
+`verify.mjs` 按不变量校验数据集：JSONL 每行可解析、id 唯一、按 installs 降序、字段格式正确（`hash` 为 64 位 hex 或 null、`audits` 为数组等）、`contentSaved` 与磁盘目录严格对应、`noSnapshot` 行无内容、内容目录非空、无中断运行留下的 `.tmp` 残留。它是任何数据集被信任或上传前的门禁。
 
 ### 本地
 

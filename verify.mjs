@@ -8,7 +8,8 @@
  *     fetchedAt, hash, audits)
  *   - noSnapshot rows have contentSaved=false, no hash and no directory
  *   - contentSaved matches the on-disk directory exactly
- *   - content directories are non-empty and free of scraper junk (_meta.json)
+ *   - content directories are non-empty (their files mirror the upstream
+ *     skill verbatim, including files like _meta.json that skills may ship)
  *   - no .tmp / skills.jsonl.tmp leftovers from interrupted runs
  *
  * Usage: node verify.mjs [--out data]
@@ -38,7 +39,8 @@ const problem = (msg) => problems.push(msg);
 function checkRow(row) {
   const id = row.id;
   const label = typeof id === "string" ? id : "(missing id)";
-  if (typeof id !== "string" || !/^[^/]+(\/[^/]+){1,2}$/.test(id)) problem(`${label}: malformed id`);
+  // Ids are source/slug; slugs may themselves contain "/" (4+ segments exist).
+  if (typeof id !== "string" || id.split("/").filter((s) => s.length).length < 2) problem(`${label}: malformed id`);
   if (!["github", "well-known"].includes(row.sourceType)) problem(`${label}: bad sourceType ${JSON.stringify(row.sourceType)}`);
   if (!Number.isFinite(row.installs) || row.installs < 0) problem(`${label}: bad installs`);
   if (typeof row.contentSaved !== "boolean") problem(`${label}: contentSaved must be a boolean`);
@@ -64,7 +66,6 @@ async function checkContentDir(row, label) {
   const entries = await readdir(dir, { recursive: true, withFileTypes: true });
   const files = entries.filter((e) => e.isFile());
   if (!files.length) problem(`${label}: content directory is empty`);
-  if (files.some((f) => f.name === "_meta.json")) problem(`${label}: stray _meta.json (v1 leftover)`);
   return true;
 }
 

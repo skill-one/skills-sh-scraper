@@ -23,6 +23,7 @@ const FILES = {
   "vercel-labs/skills/find-skills": [
     { path: "SKILL.md", contents: "# find-skills\nFind skills on skills.sh.\n" },
     { path: "scripts/run.sh", contents: "#!/bin/sh\necho find-skills\n" },
+    { path: "_meta.json", contents: "{}\n" }, // some skills ship their own _meta.json
   ],
   "mintlify.com/mintlify": [{ path: "SKILL.md", contents: "# mintlify\nWell-known skill.\n" }],
   "owner/repo/wei rd~x": [{ path: "SKILL.md", contents: "# weird slug\n" }],
@@ -145,8 +146,8 @@ test("scraper end-to-end against mock API", async () => {
       await readFile(dir(out1, "vercel-labs", "skills", "find-skills", "scripts", "run.sh"), "utf8"),
       FILES["vercel-labs/skills/find-skills"][1].contents,
     );
-    // content dirs contain ONLY skill files (no _meta.json or other junk)
-    assert.deepEqual((await readdir(dir(out1, "vercel-labs", "skills", "find-skills"))).sort(), ["SKILL.md", "scripts"]);
+    // content dirs contain ONLY skill files (upstream-shipped _meta.json is legit)
+    assert.deepEqual((await readdir(dir(out1, "vercel-labs", "skills", "find-skills"))).sort(), ["SKILL.md", "_meta.json", "scripts"]);
     // well-known source: domain/slug layout
     assert.equal(await readFile(dir(out1, "mintlify.com", "mintlify", "SKILL.md"), "utf8"), FILES["mintlify.com/mintlify"][0].contents);
     // unsafe slug characters are sanitized in directory names
@@ -218,11 +219,11 @@ test("scraper end-to-end against mock API", async () => {
     const t2 = await verify(out1);
     assert.equal(t2.status, 1);
     assert.match(t2.stderr, /not sorted/);
-    // 3. v1 leftover junk inside a content directory
-    await writeFile(dir(out1, "mintlify.com", "mintlify", "_meta.json"), "{}\n");
+    // 3. leftover temp file from an interrupted run
+    await writeFile(path.join(out1, "skills.jsonl.tmp"), "{");
     const t3 = await verify(out1);
     assert.equal(t3.status, 1);
-    assert.match(t3.stderr, /_meta\.json/);
+    assert.match(t3.stderr, /skills\.jsonl\.tmp/);
   } finally {
     server.close();
     await rm(workDir, { recursive: true, force: true });
