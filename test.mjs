@@ -55,6 +55,7 @@ test("scraper end-to-end against mock API", async () => {
       hits.list++;
       const page = Number(url.searchParams.get("page") ?? 0);
       const data = SKILLS.slice(page * 3, page * 3 + 3);
+      if (page === 1) data.push(SKILLS[0]); // leaderboard drift: same id served on two pages
       res.setHeader("content-type", "application/json");
       res.end(JSON.stringify({ data, pagination: { page, perPage: 500, total: SKILLS.length, hasMore: (page + 1) * 3 < SKILLS.length } }));
       return;

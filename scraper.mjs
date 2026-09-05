@@ -111,9 +111,17 @@ const exists = (p) => access(p).then(() => true, () => false);
 
 async function fetchLeaderboard(token) {
   const skills = [];
+  const seen = new Set();
   for (let page = 0; ; page++) {
     const { data, pagination } = await apiGet(`/api/v1/skills?per_page=500&page=${page}`, token);
-    skills.push(...(data ?? []));
+    // The leaderboard can drift while we paginate (entries shifting across
+    // page boundaries), serving the same id twice; keep the first occurrence.
+    for (const skill of data ?? []) {
+      if (!seen.has(skill.id)) {
+        seen.add(skill.id);
+        skills.push(skill);
+      }
+    }
     console.error(`  leaderboard: ${skills.length}/${pagination.total} (page ${page})`);
     if (!pagination.hasMore || !data?.length) return skills;
   }
