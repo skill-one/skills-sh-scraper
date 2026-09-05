@@ -1,0 +1,76 @@
+name: Fetch skills
+
+# Daily full scrape. This scheduled run is also the canary against the real
+# API: it fails loudly if auth, response shapes or artifact invariants drift.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 2 * * *"
+
+permissions:
+  contents: read
+
+concurrency: skills-fetch
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # Layer 1: deterministic, secret-free tests must pass before touching the API.
+      - name: Offline tests
+        run: npm test
+
+      # The Vercel OIDC token expires every ~12h, so it cannot be stored as a
+      # secret. Instead, mint a fresh one here from the long-lived VERCEL_TOKEN
+      # by linking the project and pulling the development env.
+      - name: Link Vercel project
+        run: |
+          mkdir -p .vercel
+          printf '{"orgId":"%s","projectId":"%s"}\n' "$VERCEL_ORG_ID" "$VERCEL_PROJECT_ID" > .vercel/project.json
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Mint Vercel OIDC token
+        run: npx vercel@latest env pull .env.local
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      - name: Scrape all skills
+        run: node scraper.mjs
+
+      # Resume must hold on real data: a second run reuses everything.
+      - name: Resume check
+        run: |
+          set -o pipefail
+          node scraper.mjs 2>&1 | tee resume.log
+          grep -q "Done: saved=0, reused=.*failed=0" resume.log
+
+      # Layer 2: artifact invariants gate the upload.
+      - name: Verify artifacts
+        run: node verify.mjs
+
+      - name: Upload metadata index
+        uses: actions/upload-artifact@v4
+        with:
+          name: skills-jsonl-${{ github.run_id }}
+          path: data/skills.jsonl
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload skill contents
+        uses: actions/upload-artifact@v4
+        with:
+          name: skills-content-${{ github.run_id }}
+          path: data/skills/
+          if-no-files-found: error
+          retention-days: 14

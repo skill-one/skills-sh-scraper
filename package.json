@@ -1,0 +1,15 @@
+{
+  "name": "skills-sh-scraper",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Scrape all skills from skills.sh into a local directory.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "scrape": "node scraper.mjs",
+    "verify": "node verify.mjs",
+    "test": "node --test"
+  }
+}
