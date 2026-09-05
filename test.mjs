@@ -5,8 +5,10 @@
 // content), pure content directories, path sanitization, full re-write every
 // run with fetchedAt pinned to the content hash via the previous index,
 // .env.local token loading, 429 retry honoring Retry-After, --audits (kept
-// while the hash is unchanged, re-fetched when it changes), deterministic
-// installs-desc/id-asc row order, and verifier rejection of tampered datasets.
+// while the hash is unchanged, re-fetched when it changes), --limit carrying
+// over rows outside the limit so a limited run never orphans content,
+// deterministic installs-desc/id-asc row order, per-run stats in stats.json
+// (timing, counters, failed ids), and verifier rejection of tampered datasets.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -127,7 +129,7 @@ test("scraper end-to-end against mock API", async () => {
   const run = async (out, flags = []) => {
     const env = { ...process.env, SKILLS_API_BASE: base };
     delete env.VERCEL_OIDC_TOKEN; // force the .env.local fallback
-    const child = spawn(process.execPath, [SCRAPER, "--out", out, "--limit", "6", ...flags], { cwd: workDir, env });
+    const child = spawn(process.execPath, [SCRAPER, "--out", out, ...flags], { cwd: workDir, env });
     let stderr = "";
     child.stderr.on("data", (d) => (stderr += d));
     const code = await new Promise((resolve, reject) => {
@@ -138,6 +140,7 @@ test("scraper end-to-end against mock API", async () => {
   };
 
   const readRows = async (out) => (await readFile(path.join(out, "skills.jsonl"), "utf8")).split("\n").filter(Boolean).map(JSON.parse);
+  const readStats = async (out) => JSON.parse(await readFile(path.join(out, "stats.json"), "utf8"));
   const pathExists = (p) => access(p).then(() => true, () => false);
   const dir = (out, ...p) => path.join(out, "skills", ...p);
 
@@ -183,6 +186,24 @@ test("scraper end-to-end against mock API", async () => {
     // no temp leftovers
     assert.equal(await pathExists(path.join(out1, ".tmp")), false);
 
+    // stats.json describes this run: timing, entry counts, failed ids
+    const stats1 = await readStats(out1);
+    assert.equal(stats1.apiBase, base);
+    assert.equal(stats1.limit, null); // no --limit: full scrape
+    assert.equal(stats1.audits, false);
+    assert.ok(!Number.isNaN(Date.parse(stats1.startedAt)));
+    assert.ok(!Number.isNaN(Date.parse(stats1.finishedAt)));
+    assert.ok(stats1.finishedAt >= stats1.startedAt);
+    assert.ok(stats1.durationMs >= 0);
+    assert.equal(stats1.leaderboardTotal, 6); // unique leaderboard entries (drift dupe excluded)
+    assert.equal(stats1.fetched, 6);
+    assert.deepEqual(
+      { saved: stats1.saved, updated: stats1.updated, dropped: stats1.dropped, failed: stats1.failed, carriedOver: stats1.carriedOver },
+      { saved: 3, updated: 0, dropped: 2, failed: 1, carriedOver: 0 },
+    );
+    assert.deepEqual(stats1.failedIds, ["owner/repo/bad-id"]);
+    assert.equal(stats1.indexedRows, 3);
+
     // --- run 2: everything is re-fetched and re-written, but while the
     // upstream hash is unchanged each row keeps the fetchedAt of the run
     // that first fetched that content version
@@ -225,6 +246,8 @@ test("scraper end-to-end against mock API", async () => {
     assert.match(r4.stderr, /saved=3, updated=0, dropped=2, failed=1/);
 
     const rows4 = await readRows(out2);
+    assert.equal(stats1.audits, false); // run 1's stats (out1) unaffected by run 4
+    assert.equal((await readStats(out2)).audits, true); // --audits recorded
     assert.deepEqual(
       rows4.map((r) => r.id),
       ["vercel-labs/skills/find-skills", "mintlify.com/mintlify", "owner/repo/wei rd~x"],
@@ -251,30 +274,47 @@ test("scraper end-to-end against mock API", async () => {
     const r6 = await run(out1);
     assert.equal(r6.status, 0, `run 6 failed:\n${r6.stderr}`);
     assert.match(r6.stderr, /saved=0, updated=3, dropped=2, failed=1 \(carried over: 1\)/);
-    assert.match(r6.stderr, /"failed":1,"carried":1/); // machine-readable metrics line
+    const stats6 = await readStats(out1);
+    assert.equal(stats6.carriedOver, 1); // machine-readable stats replaced the old stderr metrics line
+    assert.equal(stats6.indexedRows, 4);
+    assert.deepEqual(stats6.failedIds, ["owner/repo/bad-id"]);
     const rows6 = await readRows(out1);
     assert.deepEqual(rows6[3], rows5[3]); // carried over verbatim: same hash, fetchedAt, fields
     assert.equal(await readFile(dir(out1, "owner__repo__bad-id", "SKILL.md"), "utf8"), FILES["owner/repo/bad-id"][0].contents);
 
-    // --- run 7 (--audits, out2): unchanged content reuses the previous audit
+    // --- run 7: --limit 1 on an existing dataset. The limit constrains only
+    // what is fetched, never the index: skills outside the limit keep their
+    // previous rows (their content is still on disk), so the index does not
+    // shrink to one row and orphan the rest.
+    const r7l = await run(out1, ["--limit", "1"]);
+    assert.equal(r7l.status, 0, `run 7 failed:\n${r7l.stderr}`);
+    assert.match(r7l.stderr, /saved=0, updated=1, dropped=0, failed=0 \(carried over: 3\)/);
+    assert.deepEqual((await readRows(out1)).map((r) => r.id), rows6.map((r) => r.id));
+    const stats7l = await readStats(out1);
+    assert.equal(stats7l.limit, 1);
+    assert.equal(stats7l.fetched, 1);
+    assert.equal(stats7l.carriedOver, 3);
+    assert.equal(stats7l.indexedRows, 4);
+
+    // --- run 8 (--audits, out2): unchanged content reuses the previous audit
     // results without any audit request
     const auditHitsAfterRun4 = hits.audit;
-    const r7 = await run(out2, ["--audits"]);
-    assert.equal(r7.status, 0, `run 7 failed:\n${r7.stderr}`);
-    assert.equal(hits.audit, auditHitsAfterRun4); // no re-fetch while hashes are unchanged
-    const rows7 = await readRows(out2);
-    assert.deepEqual(rows7[0].audits, AUDITS["vercel-labs/skills/find-skills"]); // kept
-    assert.deepEqual(rows7[1].audits, []);
-
-    // --- run 8 (--audits, out2): an upstream edit changes the hash, so that
-    // skill's audits are re-fetched; the untouched skills keep theirs
-    findSkillsRev = 2;
     const r8 = await run(out2, ["--audits"]);
     assert.equal(r8.status, 0, `run 8 failed:\n${r8.stderr}`);
-    assert.equal(hits.audit, auditHitsAfterRun4 + 1); // exactly the edited skill re-audited
+    assert.equal(hits.audit, auditHitsAfterRun4); // no re-fetch while hashes are unchanged
     const rows8 = await readRows(out2);
-    assert.equal(rows8[0].hash, hashOf("vercel-labs/skills/find-skills:2"));
-    assert.deepEqual(rows8[0].audits, AUDITS["vercel-labs/skills/find-skills"]);
+    assert.deepEqual(rows8[0].audits, AUDITS["vercel-labs/skills/find-skills"]); // kept
+    assert.deepEqual(rows8[1].audits, []);
+
+    // --- run 9 (--audits, out2): an upstream edit changes the hash, so that
+    // skill's audits are re-fetched; the untouched skills keep theirs
+    findSkillsRev = 2;
+    const r9 = await run(out2, ["--audits"]);
+    assert.equal(r9.status, 0, `run 9 failed:\n${r9.stderr}`);
+    assert.equal(hits.audit, auditHitsAfterRun4 + 1); // exactly the edited skill re-audited
+    const rows9 = await readRows(out2);
+    assert.equal(rows9[0].hash, hashOf("vercel-labs/skills/find-skills:2"));
+    assert.deepEqual(rows9[0].audits, AUDITS["vercel-labs/skills/find-skills"]);
 
     // --- artifact verifier accepts both datasets (default + audits modes)
     const verify = async (out) => {
@@ -337,6 +377,17 @@ test("scraper end-to-end against mock API", async () => {
     assert.equal(t6.status, 1);
     assert.match(t6.stderr, /collides/);
     await writeFile(path.join(out1, "skills.jsonl"), rows6.map((r) => JSON.stringify(r)).join("\n") + "\n");
+    // 7. stats.json is unparseable
+    await writeFile(path.join(out1, "stats.json"), "{");
+    const t7 = await verify(out1);
+    assert.equal(t7.status, 1);
+    assert.match(t7.stderr, /stats\.json: invalid JSON/);
+    // 8. stats.json's indexedRows disagrees with the index
+    await writeFile(path.join(out1, "stats.json"), JSON.stringify({ ...stats6, indexedRows: 99 }, null, 2) + "\n");
+    const t8 = await verify(out1);
+    assert.equal(t8.status, 1);
+    assert.match(t8.stderr, /indexedRows 99 != index row count 4/);
+    await writeFile(path.join(out1, "stats.json"), JSON.stringify(stats6, null, 2) + "\n");
   } finally {
     server.close();
     await rm(workDir, { recursive: true, force: true });

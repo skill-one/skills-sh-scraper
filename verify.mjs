@@ -11,6 +11,7 @@
  *     row has a non-empty directory (its files mirror the upstream skill
  *     verbatim, including files like _meta.json that skills may ship) and
  *     every directory belongs to a row
+ *   - stats.json parses and its indexedRows count matches the index
  *   - no .tmp / skills.jsonl.tmp leftovers from interrupted runs
  *
  * Usage: node verify.mjs [--out data]
@@ -96,6 +97,19 @@ if (text === null) {
 
   if (await exists(path.join(OUT_DIR, ".tmp"))) problem(".tmp leftover from an interrupted run");
   if (await exists(path.join(OUT_DIR, "skills.jsonl.tmp"))) problem("skills.jsonl.tmp leftover from an interrupted run");
+
+  const statsRaw = await readFile(path.join(OUT_DIR, "stats.json"), "utf8").catch(() => null);
+  if (statsRaw === null) {
+    problem("stats.json not found");
+  } else {
+    try {
+      const stats = JSON.parse(statsRaw);
+      if (stats.indexedRows !== rowCount) problem(`stats.json: indexedRows ${stats.indexedRows} != index row count ${rowCount}`);
+    } catch {
+      problem("stats.json: invalid JSON");
+    }
+  }
+  if (await exists(path.join(OUT_DIR, "stats.json.tmp"))) problem("stats.json.tmp leftover from an interrupted run");
 }
 
 if (problems.length) {

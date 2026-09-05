@@ -20,6 +20,7 @@ git log dist                                                                    
 ```
 data/
 ├── skills.jsonl   每个已保存技能一行,按 installs 降序(并列时按 id 升序)—— 查询 / 筛选 / 排行在这里
+├── stats.json     产出该快照那一次运行的统计 —— 耗时、条目数、失败明细
 └── skills/        每个技能一个目录 —— 读文件 / 拷贝在这里
     ├── vercel-labs__skills__find-skills/     技能 id 中的 "/" → "__"
     │   └── SKILL.md
@@ -37,7 +38,18 @@ data/
 | `fetchedAt` | 当前内容版本首次抓取的时间(hash 未变时沿用;内容本身每次运行都会重新下载) |
 | `audits` | 使用 `--audits` 时:合作方审计结果(`provider`、`status`、`riskLevel`…);`[]` = 尚无人审计。内容 hash 未变时沿用旧结果,hash 变化时重新抓取 |
 
-不会进入索引的技能:重复技能(排行榜上的 `isDuplicate`)、上游无文件快照的技能。抓取失败的技能会保留上一次的快照(索引行 + 内容目录)不变,直到某次运行重新抓取成功;从未成功抓取过的技能则不出现在索引中。以上技能每次运行都会重试,运行日志分别计入 `dropped` / `failed`(曾保存过的失败计入 `carried over`)。
+不会进入索引的技能:重复技能(排行榜上的 `isDuplicate`)、上游无文件快照的技能。抓取失败的技能会保留上一次的快照(索引行 + 内容目录)不变,直到某次运行重新抓取成功;从未成功抓取过的技能则不出现在索引中。以上技能每次运行都会重试。沿用上一轮索引的行计入 `carried over`:抓取失败的技能,以及(`--limit` 时)limit 之外、内容仍在磁盘上的技能。
+
+`stats.json` 记录产出该快照的那一次运行:
+
+| 字段 | 含义 |
+|---|---|
+| `startedAt`、`finishedAt`、`durationMs` | 运行的开始 / 结束时间与总耗时 |
+| `apiBase`、`limit`、`audits` | 运行配置(全量抓取时 `limit` 为 `null`) |
+| `leaderboardTotal` | 去重后的排行榜条目数 |
+| `fetched` | 实际请求内容的技能数(整个排行榜,或 `--limit` 截取的前 N 个) |
+| `saved`、`updated`、`dropped`、`failed`、`carriedOver` | 各结果计数;`failedIds` 列出失败技能的 id |
+| `indexedRows` | `skills.jsonl` 的行数(= `saved` + `updated` + `carriedOver`) |
 
 ## 使用数据
 

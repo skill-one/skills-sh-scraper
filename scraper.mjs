@@ -9,6 +9,8 @@
  *   data/skills.jsonl                       index: one row per skill whose
  *                                           files are on disk under skills/
  *   data/skills/{owner}__{repo}__{slug}/    pure skill files, nothing else
+ *   data/stats.json                         this run's stats: timing, entry
+ *                                           counts, failed ids
  *
  * The index lists exactly the skills with content on disk: one row if and
  * only if the skill's directory exists. Duplicate skills and skills without
@@ -19,7 +21,10 @@
  *
  * Usage:
  *   node scraper.mjs                    # full scrape into ./data
- *   node scraper.mjs --limit 20         # fetch details for the first 20 skills only
+ *   node scraper.mjs --limit 20         # fetch details for the first 20 skills
+ *                                       # only; the rest of a previous index is
+ *                                       # carried over, so this is safe to run
+ *                                       # against an existing dataset
  *   node scraper.mjs --out ./data       # custom output directory
  *   node scraper.mjs --audits           # also fetch security audit results
  *
@@ -42,6 +47,7 @@ const OUT_DIR = argValue(args, "--out") ?? "data";
 const DETAIL_LIMIT = argValue(args, "--limit") ? Number(argValue(args, "--limit")) : Infinity;
 const WANT_AUDITS = args.includes("--audits");
 const CONCURRENCY = 10; // API rate limit is 600 req/min per (team, project)
+const startedAt = new Date();
 
 async function loadToken() {
   if (process.env.VERCEL_OIDC_TOKEN) return process.env.VERCEL_OIDC_TOKEN;
@@ -89,7 +95,11 @@ async function apiGet(pathname, token, { allow404 = false } = {}) {
       await sleep(1000 * attempt);
       continue;
     }
-    if ((res.status === 429 || res.status === 503) && attempt < 8) {
+    // 429/5xx are transient (honor Retry-After; 1s otherwise). 4xx are NOT
+    // retried: they are deterministic. Skills whose slug contains "/" always
+    // 400 — the API only routes /{owner}/{repo}/{skill} and cannot address
+    // such ids; they fail fast here and are retried on the next run instead.
+    if ((res.status === 429 || res.status >= 500) && attempt < 8) {
       const header = res.headers.get("retry-after");
       const sec = header === null ? 1 : Number(header);
       await res.text().catch(() => {});
@@ -108,8 +118,11 @@ async function apiGet(pathname, token, { allow404 = false } = {}) {
   }
 }
 
-// Ids are "owner/repo/slug" (github) or "domain/slug" (well-known). Directory
-// names are derived in lib.mjs; `encId` percent-encodes each segment for URLs.
+// Ids are "owner/repo/slug" (github) or "domain/slug" (well-known), but the
+// slug itself may contain "/" (4+ segments). Directory names are derived in
+// lib.mjs; `encId` percent-encodes each segment for URLs. Note the API cannot
+// address such ids at all (see the 429/5xx comment in apiGet): the detail
+// fetch fails with 400 every run until upstream supports them.
 const encId = (id) => id.split("/").map(encodeURIComponent).join("/");
 const skillDir = (id) => path.join(OUT_DIR, "skills", dirName(id));
 
@@ -271,10 +284,26 @@ const worker = async () => {
 };
 await Promise.all(Array.from({ length: Math.min(CONCURRENCY, targets.length) }, worker));
 
+// With --limit, skills outside the limit were not evaluated this run, but
+// their content is still on disk. Carry their previous rows over so the
+// index keeps describing every content directory (a limited run must not
+// shrink the index and orphan the rest); the next full run re-evaluates
+// them. Full runs evaluate every skill, so this is a no-op for them and
+// they remain the ones that drop rows for skills no longer listed.
+if (targets.length < skills.length) {
+  const evaluated = new Set(targets.map((s) => s.id));
+  for (const [id, prev] of prevIndex) {
+    if (!evaluated.has(id) && (await exists(skillDir(id)))) {
+      rows.push(prev);
+      carried++;
+    }
+  }
+}
+
 // Sort by installs desc, ties by id: workers finish out of order, so the row
 // order would otherwise be nondeterministic and daily snapshots would differ
-// even without real changes. Skills no longer listed are dropped. Written
-// atomically so the index is never half-updated.
+// even without real changes. Written atomically so the index is never
+// half-updated.
 const byRank = (a, b) => b.installs - a.installs || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 const indexPath = path.join(OUT_DIR, "skills.jsonl");
 const tmpIndex = `${indexPath}.tmp`;
@@ -282,6 +311,29 @@ await writeFile(tmpIndex, rows.sort(byRank).map((row) => JSON.stringify(row)).jo
 await rename(tmpIndex, indexPath);
 await rm(path.join(OUT_DIR, ".tmp"), { recursive: true, force: true });
 
+// Run stats, published alongside the dataset: timing, entry counts and the
+// failed ids (the human summary below is the same numbers, less precise).
+const finishedAt = new Date();
+const stats = {
+  apiBase: API_BASE,
+  limit: Number.isFinite(DETAIL_LIMIT) ? DETAIL_LIMIT : null,
+  audits: WANT_AUDITS,
+  startedAt: startedAt.toISOString(),
+  finishedAt: finishedAt.toISOString(),
+  durationMs: finishedAt - startedAt,
+  leaderboardTotal: skills.length,
+  fetched: targets.length,
+  saved,
+  updated,
+  dropped,
+  failed: failed.length,
+  carriedOver: carried,
+  failedIds: failed,
+  indexedRows: rows.length,
+};
+const statsPath = path.join(OUT_DIR, "stats.json");
+await writeFile(`${statsPath}.tmp`, JSON.stringify(stats, null, 2) + "\n");
+await rename(`${statsPath}.tmp`, statsPath);
+
 console.error(`Done: saved=${saved}, updated=${updated}, dropped=${dropped}, failed=${failed.length} (carried over: ${carried}) -> ${OUT_DIR}/`);
-// Machine-readable summary for CI checks (e.g. the workflow's resume check).
-console.error(`metrics ${JSON.stringify({ saved, updated, dropped, failed: failed.length, carried })}`);
+// Machine-readable numbers live in ${OUT_DIR}/stats.json (written above).

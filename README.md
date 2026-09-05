@@ -20,6 +20,7 @@ Or produce it yourself: `node scraper.mjs` — see [DEVELOPING.md](DEVELOPING.md
 ```
 data/
 ├── skills.jsonl   one row per saved skill, sorted by installs desc (ties by id) — query / filter / rank here
+├── stats.json     the producing run's stats — elapsed time, entry counts, failed ids
 └── skills/        one directory per skill — read / copy files here
     ├── vercel-labs__skills__find-skills/     skill id with "/" → "__"
     │   └── SKILL.md
@@ -37,7 +38,18 @@ A skill directory contains exactly the files the upstream skill ships — copy i
 | `fetchedAt` | when the current content version was first fetched; carried over while the hash is unchanged (content itself is re-downloaded every run) |
 | `audits` | with `--audits`: partner audit results (`provider`, `status`, `riskLevel`, …); `[]` = none yet. Reused while the content hash is unchanged, re-fetched when it changes |
 
-Skills left out of the index: duplicates (`isDuplicate` on the leaderboard) and skills with no upstream file snapshot. A skill whose fetch failed keeps its previous snapshot — index row plus content directory — until a later run fetches it again; skills never fetched successfully are left out. All of them are retried every run; the run log counts them as `dropped` / `failed` (previously saved ones as `carried over`).
+Skills left out of the index: duplicates (`isDuplicate` on the leaderboard) and skills with no upstream file snapshot. A skill whose fetch failed keeps its previous snapshot — index row plus content directory — until a later run fetches it again; skills never fetched successfully are left out. All of them are retried every run. Rows kept from the previous index count as `carried over`: a failed fetch, or — with `--limit` — a skill outside the limit, whose content is still on disk.
+
+`stats.json` summarizes the run that produced the snapshot:
+
+| Field | Meaning |
+|---|---|
+| `startedAt`, `finishedAt`, `durationMs` | when the run started / ended, and how long it took |
+| `apiBase`, `limit`, `audits` | run configuration (`limit` is `null` for a full scrape) |
+| `leaderboardTotal` | unique leaderboard entries after deduplication |
+| `fetched` | skills content was requested for (the whole leaderboard, or the first `limit`) |
+| `saved`, `updated`, `dropped`, `failed`, `carriedOver` | outcome counters; `failedIds` lists the failed skill ids |
+| `indexedRows` | lines in `skills.jsonl` (= `saved` + `updated` + `carriedOver`) |
 
 ## Using the data
 
