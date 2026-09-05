@@ -1,7 +1,7 @@
 name: Fetch skills
 
 # Daily full scrape. This scheduled run is also the canary against the real
-# API: it fails loudly if auth, response shapes or artifact invariants drift.
+# API: it fails loudly if auth, response shapes or dataset invariants drift.
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ on:
     - cron: "0 2 * * *"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency: skills-fetch
 
@@ -62,22 +62,37 @@ jobs:
           echo "resume re-saved ${saved} of ${total} skills"
           [ "$saved" -le $((total / 100 + 1)) ] || { echo "resume broken: too many re-saves"; exit 1; }
 
-      # Layer 2: artifact invariants gate the upload.
-      - name: Verify artifacts
+      # Layer 2: dataset invariants gate the publish.
+      - name: Verify dataset
         run: node verify.mjs
 
-      - name: Upload metadata index
-        uses: actions/upload-artifact@v4
-        with:
-          name: skills-jsonl-${{ github.run_id }}
-          path: data/skills.jsonl
-          if-no-files-found: error
-          retention-days: 14
+      # Data is published to the dist branch: one commit per day, history
+      # pruned to the newest 5 commits, so the branch stays a bounded,
+      # browsable archive of recent daily snapshots.
+      - name: Publish to dist branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Upload skill contents
-        uses: actions/upload-artifact@v4
-        with:
-          name: skills-content-${{ github.run_id }}
-          path: data/skills/
-          if-no-files-found: error
-          retention-days: 14
+          # Park the fresh snapshot; load the current dist branch if it exists.
+          mv data data-fresh
+          if git fetch -q origin dist; then
+            git checkout -q -B dist FETCH_HEAD
+          else
+            git checkout -q --orphan dist
+            git rm -rq --cached .
+          fi
+          rm -rf data
+          mv data-fresh data
+          git add -f data
+          git commit -qm "skills.sh data — $(date -u +%F)"
+
+          # Prune: re-root the newest 5 commits (no diff replay) when over.
+          if [ "$(git rev-list --count HEAD)" -gt 5 ]; then
+            new=$(git commit-tree "$(git rev-parse HEAD~4^{tree})" -m "$(git log -1 --format=%B HEAD~4)")
+            for i in 3 2 1 0; do
+              new=$(git commit-tree "$(git rev-parse HEAD~$i^{tree})" -p "$new" -m "$(git log -1 --format=%B HEAD~$i)")
+            done
+            git reset -q --hard "$new"
+          fi
+          git push -q --force origin dist

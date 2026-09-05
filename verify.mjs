@@ -27,7 +27,7 @@ const OUT_DIR = argValue("--out") ?? "data";
 
 // Must match scraper.mjs exactly.
 const safeSegment = (s) => (s === "." || s === ".." ? "_" : s.replace(/[^\w.-]/g, "_"));
-const skillDir = (id) => path.join(OUT_DIR, "skills", ...id.split("/").map(safeSegment));
+const skillDir = (id) => path.join(OUT_DIR, "skills", id.split("/").map(safeSegment).join("__"));
 
 const exists = (p) => access(p).then(() => true, () => false);
 const isHash = (v) => typeof v === "string" && /^[0-9a-f]{64}$/i.test(v);

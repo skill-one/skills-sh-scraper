@@ -139,26 +139,26 @@ test("scraper end-to-end against mock API", async () => {
     assert.equal(rows1[3].isDuplicate, true); // flag preserved on the row
 
     assert.equal(
-      await readFile(dir(out1, "vercel-labs", "skills", "find-skills", "SKILL.md"), "utf8"),
+      await readFile(dir(out1, "vercel-labs__skills__find-skills", "SKILL.md"), "utf8"),
       FILES["vercel-labs/skills/find-skills"][0].contents,
     );
     assert.equal(
-      await readFile(dir(out1, "vercel-labs", "skills", "find-skills", "scripts", "run.sh"), "utf8"),
+      await readFile(dir(out1, "vercel-labs__skills__find-skills", "scripts", "run.sh"), "utf8"),
       FILES["vercel-labs/skills/find-skills"][1].contents,
     );
     // content dirs contain ONLY skill files (upstream-shipped _meta.json is legit)
-    assert.deepEqual((await readdir(dir(out1, "vercel-labs", "skills", "find-skills"))).sort(), ["SKILL.md", "_meta.json", "scripts"]);
-    // well-known source: domain/slug layout
-    assert.equal(await readFile(dir(out1, "mintlify.com", "mintlify", "SKILL.md"), "utf8"), FILES["mintlify.com/mintlify"][0].contents);
+    assert.deepEqual((await readdir(dir(out1, "vercel-labs__skills__find-skills"))).sort(), ["SKILL.md", "_meta.json", "scripts"]);
+    // well-known source: domain__slug directory
+    assert.equal(await readFile(dir(out1, "mintlify.com__mintlify", "SKILL.md"), "utf8"), FILES["mintlify.com/mintlify"][0].contents);
     // unsafe slug characters are sanitized in directory names
-    assert.equal(await readFile(dir(out1, "owner", "repo", "wei_rd_x", "SKILL.md"), "utf8"), FILES["owner/repo/wei rd~x"][0].contents);
+    assert.equal(await readFile(dir(out1, "owner__repo__wei_rd_x", "SKILL.md"), "utf8"), FILES["owner/repo/wei rd~x"][0].contents);
     // skill without snapshot: no directory, row marked noSnapshot
-    assert.equal(await pathExists(dir(out1, "owner", "repo", "rate-limited")), false);
+    assert.equal(await pathExists(dir(out1, "owner__repo__rate-limited")), false);
     assert.equal(rows1[4].contentSaved, false);
     assert.equal(rows1[4].noSnapshot, true);
     assert.equal(rows1[4].hash, null);
     // permanently failing skill: run still exits 0, error recorded on the row
-    assert.equal(await pathExists(dir(out1, "owner", "repo", "bad-id")), false);
+    assert.equal(await pathExists(dir(out1, "owner__repo__bad-id")), false);
     assert.equal(rows1[5].contentSaved, false);
     assert.match(rows1[5].error, /HTTP 400/);
     // no temp leftovers
@@ -182,7 +182,7 @@ test("scraper end-to-end against mock API", async () => {
 
     const rows3 = await readRows(out2);
     assert.equal(rows3.length, 6);
-    assert.equal(await pathExists(dir(out2, "owner", "repo", "dup-skill")), false); // no content for duplicates
+    assert.equal(await pathExists(dir(out2, "owner__repo__dup-skill")), false); // no content for duplicates
     assert.equal(rows3[3].contentSaved, false);
     assert.equal("noSnapshot" in rows3[3], false); // skipped by flag, not by upstream
     assert.deepEqual(rows3[0].audits, AUDITS["vercel-labs/skills/find-skills"]);
@@ -209,7 +209,7 @@ test("scraper end-to-end against mock API", async () => {
 
     // --- verifier rejects tampered datasets (problems are reported on stderr)
     // 1. index claims content that is gone from disk
-    await rm(dir(out1, "vercel-labs", "skills", "find-skills"), { recursive: true, force: true });
+    await rm(dir(out1, "vercel-labs__skills__find-skills"), { recursive: true, force: true });
     const t1 = await verify(out1);
     assert.equal(t1.status, 1);
     assert.match(t1.stderr, /directory missing/);

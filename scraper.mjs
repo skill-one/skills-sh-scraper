@@ -2,12 +2,12 @@
 /**
  * Scrape all skills from skills.sh and save them locally.
  *
- * Zero dependencies (Node >= 20). Auth: Vercel OIDC token in VERCEL_OIDC_TOKEN
- * (env var, or .env.local produced by `vercel env pull`) — see README.md.
+ * Zero dependencies (Node >= 22). Auth: Vercel OIDC token in VERCEL_OIDC_TOKEN
+ * (env var, or .env.local produced by `vercel env pull`) — see DEVELOPING.md.
  *
  * Output shape:
- *   data/skills.jsonl                    one metadata row per skill (the single index)
- *   data/skills/{owner}/{repo}/{slug}/   pure skill files, nothing else
+ *   data/skills.jsonl                       one metadata row per skill (the single index)
+ *   data/skills/{owner}__{repo}__{slug}/    pure skill files, nothing else
  *
  * Usage:
  *   node scraper.mjs                    # full scrape into ./data
@@ -45,7 +45,7 @@ async function loadToken() {
   console.error(
     "Missing VERCEL_OIDC_TOKEN.\n" +
       "Get one with:  npm i -g vercel && vercel link && vercel env pull\n" +
-      "(the token lasts ~12h), or export VERCEL_OIDC_TOKEN yourself. See README.md.",
+      "(the token lasts ~12h), or export VERCEL_OIDC_TOKEN yourself. See DEVELOPING.md.",
   );
   process.exit(1);
 }
@@ -101,11 +101,12 @@ async function apiGet(pathname, token, { allow404 = false } = {}) {
 }
 
 // Ids are "owner/repo/slug" (github) or "domain/slug" (well-known); file paths
-// are relative. Map every segment to a filesystem-safe name; "." and ".."
-// become "_" so ids can never escape the output directory.
+// are relative. Each segment is mapped to a filesystem-safe name ("." and ".."
+// become "_") and the segments are joined with "__", so one skill is exactly
+// one directory that can never escape the output directory.
 const safeSegment = (s) => (s === "." || s === ".." ? "_" : s.replace(/[^\w.-]/g, "_"));
 const encId = (id) => id.split("/").map(encodeURIComponent).join("/");
-const skillDir = (id) => path.join(OUT_DIR, "skills", ...id.split("/").map(safeSegment));
+const skillDir = (id) => path.join(OUT_DIR, "skills", id.split("/").map(safeSegment).join("__"));
 const exists = (p) => access(p).then(() => true, () => false);
 
 async function fetchLeaderboard(token) {
