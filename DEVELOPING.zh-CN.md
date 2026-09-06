@@ -44,7 +44,7 @@ node scraper.mjs --audits                 # 同时抓取安全审计结果(请�
 - 每次运行都全量重新下载并重写全部内容(约 8400 次请求,15–30 分钟)。上次的 `skills.jsonl` 只用来固定 `fetchedAt`:上游 hash 未变化的技能保留「首次抓取该内容版本那一次运行」的 `fetchedAt`。中断重跑可续抓,上游内容变更会被自动跟进。
 - 索引只包含内容已落盘的技能:重复技能、上游无快照的技能不会出现在索引中(记录日志、计入 `Done:` 汇总、下次自动重试)。抓取失败的技能会沿用上一次的索引行和内容目录,镜像继续提供最后一份可用内容,且「行 ⟺ 目录」不变式不被破坏;从未成功抓取过的技能则不进索引。使用 `--limit` 时,limit 之外的技能同样沿用上一轮的索引行(limit 只约束抓取什么,不约束索引;下次全量运行会重新评估它们)。以上均计入 `carried over`。进程仅在系统性故障(鉴权、排行榜、索引写入)时以非零码退出。
 - 使用 `--audits` 时,只对内容 hash 变化的技能重新抓取审计结果;hash 未变的技能直接沿用上一次的结果,不发请求。
-- 已知上游限制:slug 中含 `/` 的技能(如 `claude-office-skills/skills/facebook/meta-ads`)抓取详情时必定 HTTP 400——API 只路由 `/{owner}/{repo}/{skill}`,无法寻址这类 id(任何编码形式都无效)。它们会快速失败、出现在 `stats.json` 的 `failedIds` 里,并每次运行都重试,直到上游支持。
+- slug 规范化:上游的 slug 本身可能含 `/`(如 `claude-office-skills/skills/facebook/meta-ads`)。skills.sh 以去掉 `/` 后的 slug(`…/facebookmeta-ads`)作为这类技能的键——这也是其详情 API 返回的 `id`/`slug` 形式,且是该 API 唯一能寻址的形式(只路由 `/{owner}/{repo}/{skill}`)。因此爬虫在去重之前,把排行榜的 id 规范化为该形式(`lib.mjs` 中的 `canonicalId`);两个原始 id 理论上可能去斜杠后相同,此时保留先出现的那个。
 
 ## 验证
 

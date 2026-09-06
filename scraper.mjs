@@ -43,7 +43,7 @@
 
 import { mkdir, readdir, readFile, rename, rmdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { argValue, dirName, exists, safeSegment, skillDescription } from "./lib.mjs";
+import { argValue, canonicalId, dirName, exists, safeSegment, skillDescription } from "./lib.mjs";
 
 const API_BASE = (process.env.SKILLS_API_BASE ?? "https://skills.sh").replace(/\/+$/, "");
 const args = process.argv.slice(2);
@@ -100,9 +100,7 @@ async function apiGet(pathname, token, { allow404 = false } = {}) {
       continue;
     }
     // 429/5xx are transient (honor Retry-After; 1s otherwise). 4xx are NOT
-    // retried: they are deterministic. Skills whose slug contains "/" always
-    // 400 — the API only routes /{owner}/{repo}/{skill} and cannot address
-    // such ids; they fail fast here and are retried on the next run instead.
+    // retried: they are deterministic.
     if ((res.status === 429 || res.status >= 500) && attempt < 8) {
       const header = res.headers.get("retry-after");
       const sec = header === null ? 1 : Number(header);
@@ -122,11 +120,10 @@ async function apiGet(pathname, token, { allow404 = false } = {}) {
   }
 }
 
-// Ids are "owner/repo/slug" (github) or "domain/slug" (well-known), but the
-// slug itself may contain "/" (4+ segments). Directory names are derived in
-// lib.mjs; `encId` percent-encodes each segment for URLs. Note the API cannot
-// address such ids at all (see the 429/5xx comment in apiGet): the detail
-// fetch fails with 400 every run until upstream supports them.
+// Ids are "owner/repo/slug" (github) or "domain/slug" (well-known), already
+// normalized to skills.sh's canonical form (slug slashes stripped, see
+// canonicalId in lib.mjs). Directory names are derived in lib.mjs; `encId`
+// percent-encodes each segment for URLs.
 const encId = (id) => id.split("/").map(encodeURIComponent).join("/");
 const skillDir = (id) => path.join(OUT_DIR, "skills", dirName(id));
 
@@ -137,10 +134,13 @@ async function fetchLeaderboard(token) {
     const { data, pagination } = await apiGet(`/api/v1/skills?per_page=500&page=${page}`, token);
     // The leaderboard can drift while we paginate (entries shifting across
     // page boundaries), serving the same id twice; keep the first occurrence.
+    // Ids are normalized to skills.sh's canonical form first, so a raw and a
+    // canonical occurrence of the same skill collapse into one entry too.
     for (const skill of data ?? []) {
-      if (!seen.has(skill.id)) {
-        seen.add(skill.id);
-        skills.push(skill);
+      const id = canonicalId(skill.id, skill.sourceType);
+      if (!seen.has(id)) {
+        seen.add(id);
+        skills.push({ ...skill, id });
       }
     }
     console.error(`  leaderboard: ${skills.length}/${pagination.total} (page ${page})`);

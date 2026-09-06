@@ -33,7 +33,7 @@ const problem = (msg) => problems.push(msg);
 function checkRow(row) {
   const id = row.id;
   const label = typeof id === "string" ? id : "(missing id)";
-  // Ids are source/slug; slugs may themselves contain "/" (4+ segments exist).
+  // Ids are source/slug (already canonical: the slug carries no "/").
   if (typeof id !== "string" || id.split("/").filter((s) => s.length).length < 2) problem(`${label}: malformed id`);
   if (!Number.isFinite(row.installs) || row.installs < 0) problem(`${label}: bad installs`);
   if (row.url !== null && typeof row.url !== "string") problem(`${label}: bad url`);

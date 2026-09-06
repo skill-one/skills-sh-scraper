@@ -10,7 +10,8 @@
 // over rows outside the limit so a limited run never orphans content,
 // deterministic installs-desc/id-asc row order, per-run stats in stats.json
 // (timing, counters for changed/added/removed rows, failed ids), upstream
-// delisting (row and content directory removed) and re-listing, and
+// delisting (row and content directory removed) and re-listing, slug-with-
+// slash ids normalized to skills.sh's canonical (slash-stripped) form, and
 // verifier rejection of tampered datasets.
 
 import { test } from "node:test";
@@ -22,6 +23,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
+import { canonicalId } from "./lib.mjs";
 
 const SCRAPER = fileURLToPath(new URL("./scraper.mjs", import.meta.url));
 const VERIFY = fileURLToPath(new URL("./verify.mjs", import.meta.url));
@@ -50,6 +52,8 @@ const FILES = {
   "owner/repo/flaky-500": [{ path: "SKILL.md", contents: "---\ndescription: >-\n  fetched after a\n  transient 500\n---\n# flaky\n" }], // detail 500s once, then succeeds
   "owner/repo/rate-limited": null, // no upstream snapshot: hash null, files null
   "owner/repo/bad-id": [{ path: "SKILL.md", contents: "# bad-id\n" }], // detail 400s while badIdBroken
+  // canonical form: the raw leaderboard id is claude-office-skills/skills/facebook/meta-ads
+  "claude-office-skills/skills/facebookmeta-ads": [{ path: "SKILL.md", contents: "---\nname: Facebook Meta Ads\ndescription: slash slug normalized\n---\n# fb\n" }],
 };
 
 // "bad-id" rejects the detail request outright until repaired — used to test
@@ -57,7 +61,8 @@ const FILES = {
 let badIdBroken = true;
 
 // Ids hidden from the leaderboard — simulates upstream delisting / re-listing.
-const gone = new Set();
+// The slash-slug skill starts hidden so it only joins in run 12.
+const gone = new Set(["claude-office-skills/skills/facebook/meta-ads"]);
 
 const filesFor = (id) => (id === "vercel-labs/skills/find-skills" ? findSkillsFiles(findSkillsRev) : FILES[id]);
 
@@ -77,6 +82,9 @@ const SKILLS = [
   { id: "owner/repo/dup-skill", slug: "dup-skill", name: "dup", source: "owner/repo", installs: 2, sourceType: "github", installUrl: "npx skills add owner/repo/dup-skill", url: "https://skills.sh/owner/repo/dup-skill", isDuplicate: true },
   { id: "owner/repo/rate-limited", slug: "rate-limited", name: "rl", source: "owner/repo", installs: 1, sourceType: "github", installUrl: "npx skills add owner/repo/rate-limited", url: "https://skills.sh/owner/repo/rate-limited" },
   { id: "owner/repo/bad-id", slug: "bad-id", name: "bad", source: "owner/repo", installs: 0, sourceType: "github", installUrl: "npx skills add owner/repo/bad-id", url: "https://skills.sh/owner/repo/bad-id" },
+  // raw leaderboard id carries a slash inside the slug (4 segments); skills.sh
+  // keys this skill by the slug with the "/" stripped
+  { id: "claude-office-skills/skills/facebook/meta-ads", slug: "facebook/meta-ads", name: "facebook", source: "claude-office-skills/skills", installs: 7, sourceType: "github", installUrl: "npx skills add claude-office-skills/skills/facebook/meta-ads", url: "https://skills.sh/claude-office-skills/skills/facebookmeta-ads" },
 ];
 
 test("scraper end-to-end against mock API", async () => {
@@ -105,7 +113,9 @@ test("scraper end-to-end against mock API", async () => {
       return;
     }
     const id = decodeURIComponent(url.pathname.slice("/api/v1/skills/".length));
-    const skill = SKILLS.find((s) => s.id === id);
+    // The detail API only addresses skills.sh's canonical ids (slug slashes
+    // stripped): a request for the raw form is not found.
+    const skill = SKILLS.find((s) => canonicalId(s.id, s.sourceType) === id);
     if (!skill) {
       res.statusCode = 404;
       res.end(JSON.stringify({ error: "not_found" }));
@@ -465,6 +475,30 @@ test("scraper end-to-end against mock API", async () => {
     assert.equal(stats11.removed, 0);
     assert.deepEqual((await readRows(out1)).map((r) => r.id), [...rows1.map((r) => r.id), "owner/repo/bad-id"]);
     assert.equal(await readFile(dir(out1, "owner/repo/flaky-500", "SKILL.md"), "utf8"), FILES["owner/repo/flaky-500"][0].contents);
+
+    // --- run 12: upstream lists a skill whose slug contains "/" (raw id has
+    // 4 segments). skills.sh keys such skills by the slug with the "/" stripped;
+    // the scraper normalizes the id to that canonical form, so the detail API
+    // can address it and the directory layout mirrors the canonical id.
+    gone.delete("claude-office-skills/skills/facebook/meta-ads");
+    const r12 = await run(out1);
+    assert.equal(r12.status, 0, `run 12 failed:\n${r12.stderr}`);
+    assert.match(r12.stderr, /changed=1, added=1, removed=0, dropped=2, failed=1 \(carried over: 1\)/);
+    const stats12 = await readStats(out1);
+    assert.equal(stats12.added, 1);
+    assert.deepEqual(stats12.failedIds, ["owner/repo/bad-id"]); // slash slugs no longer fail
+    assert.deepEqual(
+      (await readRows(out1)).map((r) => r.id),
+      [...rows1.map((r) => r.id), "claude-office-skills/skills/facebookmeta-ads", "owner/repo/bad-id"],
+    );
+    assert.equal(
+      await readFile(dir(out1, "claude-office-skills/skills/facebookmeta-ads", "SKILL.md"), "utf8"),
+      FILES["claude-office-skills/skills/facebookmeta-ads"][0].contents,
+    );
+    assert.equal(await pathExists(dir(out1, "claude-office-skills/skills/facebook")), false); // the raw id never materializes
+    const v12 = await verify(out1);
+    assert.equal(v12.status, 0, `verify out1 failed after run 12:\n${v12.stdout}${v12.stderr}`);
+    assert.match(v12.stdout, /OK: 6 rows, 6 content directories/);
   } finally {
     server.close();
     await rm(workDir, { recursive: true, force: true });
