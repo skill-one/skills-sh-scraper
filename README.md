@@ -6,11 +6,13 @@ A daily-updated mirror of every skill on [skills.sh](https://www.skills.sh): lea
 
 ## Where the data is
 
-Published daily to the [`dist` branch](../../tree/dist): one commit per day, the newest 5 kept. Each commit is a full snapshot at the branch root — `skills.jsonl` (index, ~1 MB of rows) plus `skills/` (all skill files):
+Published daily to the [`dist` branch](../../tree/dist): one commit per day, the newest 5 kept. Each commit is a full snapshot at the branch root — `skills.jsonl` (index, ~1 MB of rows) plus `skills/` (all skill files) — and each retained snapshot is also tagged `dist/<date>` (the tag window mirrors the 5 kept commits):
 
 ```bash
-git clone --depth 1 -b dist https://github.com/skill-one/skills-sh-scraper.git   # latest snapshot
-git log dist                                                                      # browse recent daily snapshots
+git clone --depth 1 -b dist https://github.com/skill-one/skills-sh-scraper.git           # latest snapshot
+git clone --depth 1 -b dist/2026-09-06 https://github.com/skill-one/skills-sh-scraper.git # pin a specific day
+git ls-remote --tags https://github.com/skill-one/skills-sh-scraper.git 'dist/*'          # list available days
+git log dist                                                                              # browse recent daily snapshots
 ```
 
 Or produce it yourself: `node scraper.mjs` — see [DEVELOPING.md](DEVELOPING.md).

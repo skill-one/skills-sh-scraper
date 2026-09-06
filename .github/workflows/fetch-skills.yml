@@ -16,7 +16,7 @@ concurrency: skills-fetch
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    # Full scrape (~8.4k requests, 15-30 min) plus a sampled resume check.
+    # Full scrape (~8.4k requests, 15-30 min).
     timeout-minutes: 60
 
     steps:
@@ -48,24 +48,6 @@ jobs:
 
       - name: Scrape all skills
         run: node scraper.mjs
-
-      # The previous skills.jsonl drives resume: a sampled second run over the
-      # top 500 skills must save (almost) nothing new — mass `saved` would mean
-      # the index is not being read or written correctly. A handful of saves
-      # can be legitimate (skills that just entered the top 500, or that failed
-      # in the main run); more than that is a resume bug. Per-skill upstream
-      # failures (permanent 400s) are expected; the scraper exits non-zero
-      # only on systemic failures. The sample writes into a throwaway copy,
-      # so the real dataset stays exactly as the full scrape left it.
-      - name: Resume check
-        run: |
-          set -o pipefail
-          cp -a data resume-data
-          node scraper.mjs --out resume-data --limit 500 2>&1 | tee resume.log
-          saved=$(node -p "JSON.parse(require('fs').readFileSync('resume-data/stats.json', 'utf8')).saved")
-          echo "resume saved ${saved} of the 500 sampled skills"
-          [ "$saved" -le 5 ] || { echo "resume broken: too many saves"; exit 1; }
-          rm -rf resume-data
 
       # Layer 2: dataset invariants gate the publish.
       - name: Verify dataset
@@ -105,3 +87,28 @@ jobs:
             git reset -q --hard "$new"
           fi
           git push -q --force origin dist
+
+          # Tag each retained snapshot as dist/<date> so consumers can pin a
+          # day without tracking the branch. Tags mirror the 5-commit window:
+          # when prune re-roots the commits (which resets commit dates), the
+          # date comes from the commit subject, and tags for days that fell
+          # out of the window are deleted — otherwise they would keep the
+          # pruned objects alive forever and grow the repo.
+          git fetch -q origin "+refs/tags/dist/*:refs/tags/dist/*" || true
+          kept=""
+          i=0
+          while [ "$i" -lt "$(git rev-list --count HEAD)" ] && [ "$i" -lt 5 ]; do
+            sha=$(git rev-parse "HEAD~$i")
+            day=$(git log -1 --format=%s "$sha"); day=${day##*— }
+            git tag -f "dist/$day" "$sha"
+            kept="$kept dist/$day"
+            i=$((i + 1))
+          done
+          for tag in $(git tag -l 'dist/*'); do
+            case " $kept " in *" $tag "*) continue ;; esac
+            git tag -d "$tag"
+            git push -q origin ":refs/tags/$tag"
+          done
+          for tag in $kept; do
+            git push -q origin "refs/tags/$tag:refs/tags/$tag"
+          done

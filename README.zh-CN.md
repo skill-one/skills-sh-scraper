@@ -6,11 +6,13 @@ English: [README.md](README.md) · 开发指南(运行 / 校验 / 扩展):[DEVEL
 
 ## 数据在哪里
 
-每日发布到 [`dist` 分支](../../tree/dist):每天一个提交,保留最近 5 个。每个提交都是完整快照,直接位于分支根目录——`skills.jsonl`(索引)+ `skills/`(全部技能文件):
+每日发布到 [`dist` 分支](../../tree/dist):每天一个提交,保留最近 5 个。每个提交都是完整快照,直接位于分支根目录——`skills.jsonl`(索引)+ `skills/`(全部技能文件);每个保留的快照同时会打上 `dist/<日期>` 标签(标签窗口与保留的 5 个提交一致):
 
 ```bash
-git clone --depth 1 -b dist https://github.com/skill-one/skills-sh-scraper.git   # 最新快照
-git log dist                                                                      # 回看近期每日快照
+git clone --depth 1 -b dist https://github.com/skill-one/skills-sh-scraper.git            # 最新快照
+git clone --depth 1 -b dist/2026-09-06 https://github.com/skill-one/skills-sh-scraper.git # 固定取某一天
+git ls-remote --tags https://github.com/skill-one/skills-sh-scraper.git 'dist/*'          # 列出可用日期
+git log dist                                                                              # 回看近期每日快照
 ```
 
 也可以自己生成:`node scraper.mjs` —— 见 [DEVELOPING.zh-CN.md](DEVELOPING.zh-CN.md)。
