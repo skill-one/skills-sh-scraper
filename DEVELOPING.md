@@ -7,7 +7,17 @@ How to run, verify, and extend the scraper. For using the data, see [README.md](
 1. `GET /api/v1/skills?per_page=500&page=N` — paginate the leaderboard (~17 requests for the whole catalogue).
 2. `GET /api/v1/skills/{source}/{skill}` — fetch each skill's files (the `files` array carries the full text). Files are written to a temp dir and renamed into place, so an existing directory is always complete.
 3. Merge metadata into a single `skills.jsonl` — one row per skill with saved content, sorted by installs desc, written atomically at the end.
-4. Write `stats.json` — the run's stats (timing, entry counts, failed ids), published alongside the dataset.
+4. Write `stats.json` — the run's stats, published alongside the dataset. Only fields not trivially derivable from the others:
+
+| Field | Meaning |
+|---|---|
+| `startedAt`, `finishedAt` | when the run started / ended (`durationMs` is their difference) |
+| `limit`, `audits` | run configuration (`limit` is `null` for a full scrape) |
+| `leaderboardTotal` | unique leaderboard entries after deduplication |
+| `indexedRows` | lines in `skills.jsonl` |
+| `changed` | rows whose content version changed this run (first fetch or a new upstream hash) — exactly the rows whose `fetchedAt` was re-stamped |
+| `added`, `removed` | skills entering / leaving the index: newly listed upstream, and no longer listed (row and content directory deleted; full runs only — limited runs carry unevaluated rows over) |
+| `dropped`, `failed`, `carriedOver` | outcome counters; `failedIds` lists the failed skill ids |
 
 ## Prerequisites
 

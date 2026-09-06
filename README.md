@@ -1,66 +1,64 @@
 # skills.sh data mirror
 
-A daily-updated mirror of every skill on [skills.sh](https://www.skills.sh): leaderboard metadata plus full file contents.
+A daily snapshot of every skill on [skills.sh](https://www.skills.sh): the leaderboard as a queryable index (`skills.jsonl`) plus each skill's full files (`skills/`).
 
 中文:[README.zh-CN.md](README.zh-CN.md) · Dev guide (run / verify / extend): [DEVELOPING.md](DEVELOPING.md)
 
-## Where the data is
-
-Published daily to the [`dist` branch](../../tree/dist): one commit per day, the newest 5 kept. Each commit is a full snapshot at the branch root — `skills.jsonl` (index, ~1 MB of rows) plus `skills/` (all skill files) — and each retained snapshot is also tagged `dist/<date>` (the tag window mirrors the 5 kept commits):
-
-```bash
-git clone --depth 1 -b dist https://github.com/skill-one/skills-sh-scraper.git           # latest snapshot
-git clone --depth 1 -b dist/2026-09-06 https://github.com/skill-one/skills-sh-scraper.git # pin a specific day
-git ls-remote --tags https://github.com/skill-one/skills-sh-scraper.git 'dist/*'          # list available days
-git log dist                                                                              # browse recent daily snapshots
-```
-
-Or produce it yourself: `node scraper.mjs` — see [DEVELOPING.md](DEVELOPING.md).
-
-## What's in the data
+## What the data is
 
 ```
-├── skills.jsonl   one row per saved skill, sorted by installs desc (ties by id) — query / filter / rank here
-├── stats.json     the producing run's stats — entry counts, changes, failed ids
-└── skills/        one directory per skill — read / copy files here
-    ├── vercel-labs/skills/find-skills/     the skill id, one directory level per "/"
-    │   └── SKILL.md
-    └── mintlify.com/mintlify/              (GitHub: {owner}/{repo}/{slug} · well-known: {domain}/{slug})
+├── skills.jsonl   one row per skill, sorted by installs desc — query / filter / rank here
+├── stats.json     the producing run's stats (counts, changes, failed ids)
+└── skills/        one directory per skill, named after its id
+    └── vercel-labs/skills/find-skills/   (GitHub: {owner}/{repo}/{slug} · well-known: {domain}/{slug})
         └── SKILL.md
 ```
 
-Locally the scraper writes this into `data/` (`node scraper.mjs`); on the `dist` branch it sits at the branch root.
+Each `skills.jsonl` row:
 
-A skill directory contains exactly the files the upstream skill ships — copy it straight into an agent's skills folder. The index and the content directories match exactly — a row exists if and only if its directory exists — and a directory that exists is complete. Both are integrity-checked after every run.
-
-Each `skills.jsonl` row carries `id`, `installs` and `url` from the skills.sh leaderboard (the other leaderboard fields are redundant: the id already encodes source and slug) plus:
+```json
+{
+  "id": "vercel-labs/skills/find-skills",
+  "installs": 3263512,
+  "url": "https://www.skills.sh/vercel-labs/skills/find-skills",
+  "description": "Find and install skills for your agent from skills.sh",
+  "hash": "b146008599c31057cef1c145774cea5d5afb30e8f43fa802e47a4b461419aaaf",
+  "fetchedAt": "2026-09-05T08:26:00.682Z"
+}
+```
 
 | Field | Meaning |
 |---|---|
-| `description` | taken from the skill's `SKILL.md` frontmatter; `null` if it has none |
+| `id`, `installs`, `url` | from the skills.sh leaderboard (the id encodes source and slug) |
+| `description` | from the skill's `SKILL.md` frontmatter; `null` if it has none |
 | `hash` | SHA-256 of the skill's files; `null` if unknown |
-| `fetchedAt` | when the current content version was first fetched; carried over while the hash is unchanged (content itself is re-downloaded every run) |
-| `audits` | with `--audits`: partner audit results (`provider`, `status`, `riskLevel`, …); `[]` = none yet. Reused while the content hash is unchanged, re-fetched when it changes |
+| `fetchedAt` | when the current content version was first fetched |
+| `audits` | with `--audits`: partner audit results (`provider`, `status`, `riskLevel`, …); `[]` = none yet |
 
-Skills left out of the index: duplicates (`isDuplicate` on the leaderboard) and skills with no upstream file snapshot. A skill whose fetch failed keeps its previous snapshot — index row plus content directory — until a later run fetches it again; skills never fetched successfully are left out. All of them are retried every run. A skill that disappears from the leaderboard is removed from the index together with its content directory — on full runs; a limited run carries every unevaluated row over instead. Rows kept from the previous index count as `carried over`: a failed fetch, or — with `--limit` — a skill outside the limit, whose content is still on disk.
+Two guarantees, integrity-checked after every run:
 
-`stats.json` summarizes the run that produced the snapshot (only fields not trivially derivable from the others):
+- A skill directory contains exactly the files the upstream skill ships — copy it straight into an agent's skills folder.
+- The index and `skills/` match exactly: a row exists if and only if its directory exists, and a directory is always complete.
 
-| Field | Meaning |
-|---|---|
-| `startedAt`, `finishedAt` | when the run started / ended (`durationMs` is their difference) |
-| `limit`, `audits` | run configuration (`limit` is `null` for a full scrape) |
-| `leaderboardTotal` | unique leaderboard entries after deduplication |
-| `indexedRows` | lines in `skills.jsonl` |
-| `changed` | rows whose content version changed this run (first fetch or a new upstream hash) — exactly the rows whose `fetchedAt` was re-stamped |
-| `added`, `removed` | skills entering / leaving the index: newly listed upstream, and no longer listed (the row and its content directory are deleted; full runs only — limited runs carry every unevaluated row over) |
-| `dropped`, `failed`, `carriedOver` | outcome counters; `failedIds` lists the failed skill ids |
+Edge cases (failed fetches, `--limit` runs, delisted skills) are covered in [DEVELOPING.md](DEVELOPING.md).
 
-## Using the data
+## How to get the data
+
+Published daily to the [`dist` branch](../../tree/dist) — each commit is a complete snapshot at the branch root.
+
+Latest snapshot:
 
 ```bash
-cp -r skills/vercel-labs/skills/find-skills ~/.agents/skills/   # a skill directory is the skill
-grep -r "pattern" skills --include=SKILL.md                     # full-text search
-jq -s 'sort_by(-.installs)[:20] | map(.id)' skills.jsonl        # top 20 by installs
-jq -c 'select(.audits[]?.status == "fail") | .id' skills.jsonl  # failed partner audits
+git clone --depth 1 -b dist https://github.com/skill-one/skills-sh-scraper.git
 ```
+
+Pinned to a day — each of the newest 5 snapshots is also tagged `dist/<date>`. Tags are immutable, so this is cache-friendly: cache by tag and re-fetch only when a newer day appears.
+
+```bash
+# resolve the newest available tag, then clone it
+latest=$(git ls-remote --tags https://github.com/skill-one/skills-sh-scraper.git 'dist/*' \
+         | awk -F/ '{print $NF}' | sort -V | tail -1)
+git clone --depth 1 -b "dist/$latest" https://github.com/skill-one/skills-sh-scraper.git
+```
+
+Or produce it yourself: `node scraper.mjs` — see [DEVELOPING.md](DEVELOPING.md).

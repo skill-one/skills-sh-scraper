@@ -7,7 +7,17 @@
 1. `GET /api/v1/skills?per_page=500&page=N` —— 分页遍历排行榜(全站约 17 次请求)。
 2. `GET /api/v1/skills/{source}/{skill}` —— 获取每个技能的文件(`files` 数组携带完整文本)。文件先写临时目录再原子重命名到位,因此「目录存在」就意味着「内容完整」。
 3. 元数据合并成唯一的 `skills.jsonl` —— 每个已保存内容的技能一行,按 installs 降序,运行结束时原子写入。
-4. 写入 `stats.json` —— 本次运行的统计(耗时、条目数、失败明细),随数据集一起发布。
+4. 写入 `stats.json` —— 本次运行的统计,随数据集一起发布。只保留无法从其他字段直接推导的信息:
+
+| 字段 | 含义 |
+|---|---|
+| `startedAt`、`finishedAt` | 运行的开始 / 结束时间(`durationMs` 即两者之差) |
+| `limit`、`audits` | 运行配置(全量抓取时 `limit` 为 `null`) |
+| `leaderboardTotal` | 去重后的排行榜条目数 |
+| `indexedRows` | `skills.jsonl` 的行数 |
+| `changed` | 本次内容版本发生变化的行数(首次抓取或上游 hash 变化)——恰好就是 `fetchedAt` 被重新打点的那些行 |
+| `added`、`removed` | 进入 / 离开索引的技能数:上游新上榜的,以及已下架的(行与内容目录一并删除;仅全量运行——`--limit` 运行会把未评估的行原样保留) |
+| `dropped`、`failed`、`carriedOver` | 各结果计数;`failedIds` 列出失败技能的 id |
 
 ## 前置条件
 
