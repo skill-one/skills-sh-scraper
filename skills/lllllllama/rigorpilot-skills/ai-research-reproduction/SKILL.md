@@ -22,7 +22,7 @@ separately installed companion skills remain optional reusable entrypoints.
 Executed commands persist lifecycle state, append-only events, and full streamed
 stdout/stderr under `repro_outputs/_runtime/<run_id>/`. A `CANCEL` file in the
 active run directory requests process-tree cancellation.
-For recovery, queue scheduling, retry lineage, resources, or model gates, read `references/runtime-and-model-adapter.md`.
+For recovery, queues or model gates, read `references/runtime-and-model-adapter.md`; for the optional model/tool loop, read `references/agent-runner.md` and use `scripts/run_agent.py`.
 
 ## Fit
 
@@ -91,7 +91,6 @@ See `references/patch-policy.md`.
 ## Outputs
 
 Always target `repro_outputs/`:
-
 ```text
 SUMMARY.md
 COMMANDS.md
@@ -113,6 +112,7 @@ Use the templates under `assets/` and the field rules in `references/output-spec
 - Put durable machine-readable state in `status.json`.
 - Put branch, commit, validation, and README-fidelity impact in `PATCHES.md` when needed.
 - Put the researcher's at-a-glance view in `ANNOTATED_README.md`: the README replayed byte-for-byte—including its image, GIF, video, and HTML markup—with exactly one marked color annotation after every heading block. Never extract a text-only surrogate. Generation must pass the built-in strip/check round trip before the file is kept.
+- For original relative media/file context, use `--source-adjacent-readme` to also write `RIGORPILOT_README.md` beside the source README; inspect the reported path/status and never replace an unrelated existing file. See `references/output-spec.md`.
 - Distinguish verified facts from inferred guesses.
 
 ## Reference Loading
