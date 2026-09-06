@@ -35,6 +35,7 @@ git log dist                                                                    
 
 | 字段 | 含义 |
 |---|---|
+| `description` | 取自技能 `SKILL.md` 的 frontmatter;没有时为 `null` |
 | `hash` | 技能文件内容的 SHA-256;未知时为 `null` |
 | `fetchedAt` | 当前内容版本首次抓取的时间(hash 未变时沿用;内容本身每次运行都会重新下载) |
 | `audits` | 使用 `--audits` 时:合作方审计结果(`provider`、`status`、`riskLevel`…);`[]` = 尚无人审计。内容 hash 未变时沿用旧结果,hash 变化时重新抓取 |

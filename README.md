@@ -35,6 +35,7 @@ A skill directory contains exactly the files the upstream skill ships — copy i
 
 | Field | Meaning |
 |---|---|
+| `description` | taken from the skill's `SKILL.md` frontmatter; `null` if it has none |
 | `hash` | SHA-256 of the skill's files; `null` if unknown |
 | `fetchedAt` | when the current content version was first fetched; carried over while the hash is unchanged (content itself is re-downloaded every run) |
 | `audits` | with `--audits`: partner audit results (`provider`, `status`, `riskLevel`, …); `[]` = none yet. Reused while the content hash is unchanged, re-fetched when it changes |

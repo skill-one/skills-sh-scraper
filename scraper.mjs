@@ -40,7 +40,7 @@
 
 import { mkdir, readdir, readFile, rename, rmdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { argValue, dirName, exists, safeSegment } from "./lib.mjs";
+import { argValue, dirName, exists, safeSegment, skillDescription } from "./lib.mjs";
 
 const API_BASE = (process.env.SKILLS_API_BASE ?? "https://skills.sh").replace(/\/+$/, "");
 const args = process.argv.slice(2);
@@ -176,6 +176,7 @@ async function fetchSkill(skill, prev, token) {
   if (!Array.isArray(detail.files) || !detail.files.length) {
     return { row: null, action: "dropped" }; // no upstream snapshot; retried next run
   }
+  const skillMd = detail.files.find((f) => f.path === "SKILL.md");
 
   const dirExists = await exists(dir);
   // Write to a temp dir and swap it in via rename(2), so "directory exists"
@@ -209,6 +210,7 @@ async function fetchSkill(skill, prev, token) {
   const unchanged = !!detail.hash && detail.hash === prev?.hash;
   const row = {
     ...skill,
+    description: skillDescription(skillMd?.contents),
     hash: detail.hash ?? null,
     fetchedAt: unchanged && prev.fetchedAt ? prev.fetchedAt : new Date().toISOString(),
   };

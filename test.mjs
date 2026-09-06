@@ -2,8 +2,9 @@
 // No real token, no network. Covers: pagination (with leaderboard drift),
 // skills.jsonl index shape (only saved skills — duplicates and no-snapshot
 // skills are omitted; skills whose fetch failed keep their previous row and
-// content), pure content directories, path sanitization, full re-write every
-// run with fetchedAt pinned to the content hash via the previous index,
+// content), pure content directories, path sanitization, SKILL.md description
+// extraction (plain / quoted / folded block scalars; absent -> null), full
+// re-write every run with fetchedAt pinned to the content hash via the previous index,
 // .env.local token loading, 429/5xx retry (Retry-After honored), --audits (kept
 // while the hash is unchanged, re-fetched when it changes), --limit carrying
 // over rows outside the limit so a limited run never orphans content,
@@ -28,17 +29,23 @@ const hashOf = (s) => createHash("sha256").update(s).digest("hex");
 
 // find-skills content is revision-controlled so tests can simulate upstream edits.
 const findSkillsFiles = (rev) => [
-  { path: "SKILL.md", contents: `# find-skills rev ${rev}\nFind skills on skills.sh.\n` },
+  { path: "SKILL.md", contents: `---
+name: find-skills
+description: Find skills on skills.sh.
+---
+# find-skills rev ${rev}
+Find skills on skills.sh.
+` },
   { path: "scripts/run.sh", contents: "#!/bin/sh\necho find-skills\n" },
   { path: "_meta.json", contents: "{}\n" }, // some skills ship their own _meta.json
 ];
 let findSkillsRev = 0;
 
 const FILES = {
-  "mintlify.com/mintlify": [{ path: "SKILL.md", contents: "# mintlify\nWell-known skill.\n" }],
-  "owner/repo/wei rd~x": [{ path: "SKILL.md", contents: "# weird slug\n" }],
+  "mintlify.com/mintlify": [{ path: "SKILL.md", contents: "# mintlify\nWell-known skill.\n" }], // no frontmatter
+  "owner/repo/wei rd~x": [{ path: "SKILL.md", contents: '---\ndescription: "weird but quoted"\n---\n# weird slug\n' }],
   "owner/repo/dup-skill": [{ path: "SKILL.md", contents: "# duplicate\n" }],
-  "owner/repo/flaky-500": [{ path: "SKILL.md", contents: "# flaky\n" }], // detail 500s once, then succeeds
+  "owner/repo/flaky-500": [{ path: "SKILL.md", contents: "---\ndescription: >-\n  fetched after a\n  transient 500\n---\n# flaky\n" }], // detail 500s once, then succeeds
   "owner/repo/rate-limited": null, // no upstream snapshot: hash null, files null
   "owner/repo/bad-id": [{ path: "SKILL.md", contents: "# bad-id\n" }], // detail 400s while badIdBroken
 };
@@ -170,6 +177,12 @@ test("scraper end-to-end against mock API", async () => {
     assert.ok(rows1[0].fetchedAt);
     assert.equal("audits" in rows1[0], false);
     for (const gone of ["contentSaved", "noSnapshot", "error"]) assert.equal(gone in rows1[0], false);
+
+    // description comes from the SKILL.md frontmatter (all four shapes)
+    assert.equal(rows1[0].description, "Find skills on skills.sh."); // plain scalar
+    assert.equal(rows1[1].description, null); // no frontmatter
+    assert.equal(rows1[2].description, "weird but quoted"); // quoted scalar
+    assert.equal(rows1[3].description, "fetched after a transient 500"); // folded block scalar
 
     assert.equal(
       await readFile(dir(out1, "vercel-labs/skills/find-skills", "SKILL.md"), "utf8"),
@@ -397,6 +410,13 @@ test("scraper end-to-end against mock API", async () => {
     assert.equal(t8.status, 1);
     assert.match(t8.stderr, /indexedRows 99 != index row count 5/);
     await writeFile(path.join(out1, "stats.json"), JSON.stringify(stats6, null, 2) + "\n");
+    // 9. description disagrees with the on-disk SKILL.md
+    const mislabeled = (await readRows(out1)).map((r, i) => (i === 0 ? { ...r, description: "bogus" } : r));
+    await writeFile(path.join(out1, "skills.jsonl"), mislabeled.map((r) => JSON.stringify(r)).join("\n") + "\n");
+    const t9 = await verify(out1);
+    assert.equal(t9.status, 1);
+    assert.match(t9.stderr, /description does not match/);
+    await writeFile(path.join(out1, "skills.jsonl"), rows6.map((r) => JSON.stringify(r)).join("\n") + "\n");
   } finally {
     server.close();
     await rm(workDir, { recursive: true, force: true });

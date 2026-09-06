@@ -5,8 +5,9 @@
  * Checks skills.jsonl + content directories against the scraper's invariants:
  *   - every line parses; ids unique; rows sorted by installs desc (ties by id)
  *   - required fields well-formed (id, sourceType, installs, fetchedAt, hash,
- *     audits)
+ *     audits, description)
  *   - no two rows share a sanitized directory name
+ *   - description matches the SKILL.md frontmatter on disk
  *   - rows and content directories match exactly, in both directions: every
  *     row has a non-empty directory (its files mirror the upstream skill
  *     verbatim, including files like _meta.json that skills may ship) and
@@ -19,7 +20,7 @@
 
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { argValue, dirName, exists } from "./lib.mjs";
+import { argValue, dirName, exists, skillDescription } from "./lib.mjs";
 
 const args = process.argv.slice(2);
 const OUT_DIR = argValue(args, "--out") ?? "data";
@@ -38,6 +39,7 @@ function checkRow(row) {
   if (!Number.isFinite(row.installs) || row.installs < 0) problem(`${label}: bad installs`);
   if (row.fetchedAt !== null && !isIso(row.fetchedAt)) problem(`${label}: bad fetchedAt`);
   if (row.hash !== null && !isHash(row.hash)) problem(`${label}: bad hash`);
+  if (row.description !== null && typeof row.description !== "string") problem(`${label}: bad description`);
   if ("audits" in row && !Array.isArray(row.audits)) problem(`${label}: audits must be an array`);
   return label;
 }
@@ -86,6 +88,8 @@ if (text === null) {
     }
     const entries = await readdir(dir, { recursive: true, withFileTypes: true });
     if (!entries.some((e) => e.isFile())) problem(`${label}: content directory is empty`);
+    if (row.description !== skillDescription(await readFile(path.join(dir, "SKILL.md"), "utf8").catch(() => null)))
+      problem(`${label}: description does not match SKILL.md`);
     dirCount++;
   }
   // Every directory under skills/ must be a row's content directory (whose

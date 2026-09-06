@@ -14,4 +14,30 @@ export const argValue = (args, flag) => {
 export const safeSegment = (s) => (s === "." || s === ".." ? "_" : s.replace(/[^\w.-]/g, "_"));
 export const dirName = (id) => id.split("/").map(safeSegment).join("/");
 
+// `description` from a SKILL.md's YAML frontmatter. Minimal on purpose: a
+// single-line scalar (matching quotes stripped) or a `|`/`>` block scalar;
+// anything else (no frontmatter, no top-level key) yields null. Scraper and
+// verifier share this function, so the index and the on-disk SKILL.md can
+// never disagree.
+export const skillDescription = (contents) => {
+  if (typeof contents !== "string") return null;
+  const fm = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(contents);
+  if (!fm) return null;
+  const lines = fm[1].split(/\r?\n/);
+  const at = lines.findIndex((l) => /^description:(?:\s|$)/.test(l));
+  if (at === -1) return null;
+  const value = lines[at].slice("description:".length).trim();
+  if (/^[|>][+-]?$/.test(value)) {
+    const joiner = value[0] === ">" ? " " : "\n";
+    const rest = [];
+    for (let j = at + 1; j < lines.length && (lines[j] === "" || /^\s/.test(lines[j])); j++) {
+      if (lines[j].trim()) rest.push(lines[j].trim());
+    }
+    return rest.join(joiner).trim() || null;
+  }
+  const quoted =
+    value.length >= 2 && (value.startsWith('"') || value.startsWith("'")) && value.at(-1) === value[0];
+  return (quoted ? value.slice(1, -1) : value) || null;
+};
+
 export const exists = (p) => access(p).then(() => true, () => false);
