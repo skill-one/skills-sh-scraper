@@ -8,6 +8,8 @@ A daily snapshot of every GitHub-sourced skill on [skills.sh](https://www.skills
 
 ```
 ├── skills.jsonl   one row per skill, sorted by installs desc — query / filter / rank here
+├── trending.json  the trending view's first 100 GitHub-sourced ids, in rank order
+├── curated.json   the officially featured skills' ids, grouped by owner
 ├── stats.json     the producing run's stats (counts, changes, failed ids)
 └── skills/        one directory per skill, named after its id
     └── vercel-labs/skills/find-skills/   ({owner}/{repo}/{slug})
@@ -43,6 +45,10 @@ Two guarantees, integrity-checked after every run:
 - The index and `skills/` match exactly: a row exists if and only if its directory exists, and a directory is always complete.
 
 Edge cases (failed fetches, `--limit` runs, delisted skills) are covered in [DEVELOPING.md](DEVELOPING.md).
+
+`trending.json` is the trending leaderboard's first 100 GitHub-sourced ids, re-fetched on every run from `/api/v1/skills?view=trending&per_page=200` — one request, deep enough that its first 100 GitHub-sourced entries cover the top-100 cutoff after well-known (domain) sources are skipped like at the leaderboard. It is a plain JSON array in upstream rank order — the same canonical id form as the index — so a skill's rank is its array index.
+
+Both files keep only what `skills.jsonl` does not already hold: `trending.json` and the per-owner `skills` arrays in `curated.json` are plain id lists (every per-skill field the index deliberately drops — `installs`, `url`, and the redundant display data `slug`, `name`, `source`, `sourceType`, `installUrl` — is dropped here too), with the same canonical id form as the index. `curated.json` comes from `/api/v1/skills/curated` and additionally keeps what only that endpoint has: per-owner `owner` / `totalInstalls` / `featuredRepo` / `featuredSkill` grouping (no source filtering — the list is curated upstream) and the top-level `totalOwners` / `totalSkills` / `generatedAt`. Upstream may feature the same skill under several owners, so ids can repeat across groups.
 
 ## How to get the data
 

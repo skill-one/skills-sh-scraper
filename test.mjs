@@ -16,9 +16,10 @@
 // row order, per-run stats in stats.json (timing, counters for
 // changed/added/removed rows, failed ids, nonGithub/githubRepos), upstream
 // delisting (row and content directory removed) and re-listing, slug-with-
-// slash ids normalized to skills.sh's canonical (slash-stripped) form, a
-// missing GITHUB_TOKEN aborting the run, and verifier rejection of tampered
-// datasets.
+// slash ids normalized to skills.sh's canonical (slash-stripped) form, the
+// trending top 100 and the curated owners written as id-only lists (every
+// per-skill field the index drops is dropped here too), a missing
+// GITHUB_TOKEN aborting the run, and verifier rejection of tampered datasets.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -102,6 +103,51 @@ const SKILLS = [
   { id: "affaan-m/ecc/security-review", slug: "security-review", name: "security-review", source: "affaan-m/ecc", installs: 5, sourceType: "well-known", installUrl: null, url: "https://skills.sh/site/affaan-m.ecc/security-review" },
 ];
 
+// Trending view (view=trending): a ranking of its own. trending.json keeps
+// the first 100 github-sourced ids in upstream rank order: well-known entries
+// are skipped (like the leaderboard), the raw slash-slug id is normalized to
+// skills.sh's canonical form, and every per-skill field but the id is dropped
+// (the index deliberately drops them too).
+const TRENDING = [
+  SKILLS[0],
+  { id: "claude-office-skills/skills/facebook/meta-ads", slug: "facebook/meta-ads", name: "facebook", source: "claude-office-skills/skills", installs: 7, sourceType: "github", installUrl: null, url: "https://skills.sh/claude-office-skills/skillsfacebook-meta-ads" },
+  SKILLS[1], // well-known: skipped by the trending fetch
+];
+
+// Curated view: officially featured skills grouped by owner, kept verbatim
+// except that per-skill entries are reduced to canonical ids (no source
+// filtering). Covers the owner aggregates, the top-level counts/timestamp,
+// and a well-known entry inside a group.
+const CURATED = {
+  generatedAt: "2026-05-28T04:12:23.313Z",
+  totalOwners: 2,
+  totalSkills: 3,
+  data: [
+    {
+      owner: "vercel-labs",
+      totalInstalls: 12345,
+      featuredRepo: "vercel-labs/skills",
+      featuredSkill: "find-skills",
+      skills: [SKILLS[0], SKILLS[1]],
+    },
+    {
+      owner: "claude-office-skills",
+      totalInstalls: 7,
+      featuredRepo: "claude-office-skills/skills",
+      featuredSkill: "facebook/meta-ads",
+      skills: [
+        { id: "claude-office-skills/skills/facebook/meta-ads", slug: "facebook/meta-ads", name: "facebook", source: "claude-office-skills/skills", installs: 7, sourceType: "github", installUrl: null, url: "https://skills.sh/claude-office-skills/skillsfacebook-meta-ads" },
+      ],
+    },
+  ],
+};
+// The trending fetch must request the top-200 cutoff in a single request.
+const TRENDING_PER_PAGE = "200";
+
+// What the scraper writes: CURATED with each per-skill entry reduced to its
+// canonical id.
+const CURATED_REDUCED = { ...CURATED, data: CURATED.data.map((o) => ({ ...o, skills: o.skills.map(canonicalId) })) };
+
 // Mock GitHub API: repo -> stargazers_count (null = repo gone, 404).
 const STARS = {
   "/repos/vercel-labs/skills": 1000,
@@ -135,9 +181,26 @@ const ghServer = createServer((req, res) => {
 });
 
 test("scraper end-to-end against mock API", async () => {
-  const hits = { list: 0, detail: 0, audit: 0, rateLimited: 0, flaky500: 0 };
+  const hits = { list: 0, detail: 0, audit: 0, trending: 0, curated: 0, rateLimited: 0, flaky500: 0 };
   const server = createServer((req, res) => {
     const url = new URL(req.url, "http://mock");
+    if (url.pathname === "/api/v1/skills" && url.searchParams.get("view") === "trending") {
+      hits.trending++;
+      if (url.searchParams.get("per_page") !== TRENDING_PER_PAGE) {
+        res.statusCode = 400; // the fetch must request the top-200 cutoff in one page
+        res.end(JSON.stringify({ error: "bad_request" }));
+        return;
+      }
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ data: TRENDING, pagination: { page: 0, perPage: 200, total: 9959, hasMore: true } }));
+      return;
+    }
+    if (url.pathname === "/api/v1/skills/curated") {
+      hits.curated++;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify(CURATED));
+      return;
+    }
     if (url.pathname === "/api/v1/skills") {
       hits.list++;
       const page = Number(url.searchParams.get("page") ?? 0);
@@ -233,7 +296,44 @@ test("scraper end-to-end against mock API", async () => {
     assert.equal(hits.list, 3); // 9 listed entries, 3 per mock page
     assert.equal(hits.detail, 9); // 7 skills attempted (the duplicate is never fetched) + one 429 retry + one 500 retry
     assert.equal(hits.audit, 0); // flag off -> no audit requests
+    assert.equal(hits.trending, 1); // a single trending request per run (per_page=200 is enforced by the mock)
+    assert.equal(hits.curated, 1); // a single curated request per run
     assert.match(r1.stderr, /stars: 4\/4/); // vercel-labs/skills, owner/repo, owner/flaky-repo, gone/repo
+
+    // trending.json: the trending view's first 100 github-sourced ids, in
+    // upstream rank order, slash slugs canonicalized, well-known skipped —
+    // every per-skill field but the id is dropped (the index drops it too)
+    assert.deepEqual(JSON.parse(await readFile(path.join(out1, "trending.json"), "utf8")), [
+      "vercel-labs/skills/find-skills",
+      "claude-office-skills/skills/facebookmeta-ads",
+    ]);
+    assert.equal(await pathExists(path.join(out1, "trending.json.tmp")), false);
+
+    // curated.json: the curated payload verbatim except the per-skill
+    // entries, which are reduced to canonical ids (well-known entries kept —
+    // the list is curated upstream)
+    assert.deepEqual(JSON.parse(await readFile(path.join(out1, "curated.json"), "utf8")), {
+      generatedAt: "2026-05-28T04:12:23.313Z",
+      totalOwners: 2,
+      totalSkills: 3,
+      data: [
+        {
+          owner: "vercel-labs",
+          totalInstalls: 12345,
+          featuredRepo: "vercel-labs/skills",
+          featuredSkill: "find-skills",
+          skills: ["vercel-labs/skills/find-skills", "mintlify.com/mintlify"],
+        },
+        {
+          owner: "claude-office-skills",
+          totalInstalls: 7,
+          featuredRepo: "claude-office-skills/skills",
+          featuredSkill: "facebook/meta-ads",
+          skills: ["claude-office-skills/skills/facebookmeta-ads"],
+        },
+      ],
+    });
+    assert.equal(await pathExists(path.join(out1, "curated.json.tmp")), false);
 
     const rows1 = await readRows(out1);
     assert.deepEqual(
@@ -466,7 +566,7 @@ test("scraper end-to-end against mock API", async () => {
     assert.equal(t2.status, 1);
     assert.match(t2.stderr, /no content directory/);
     await mkdir(dir(out1, "vercel-labs/skills/find-skills"), { recursive: true });
-    await writeFile(dir(out1, "vercel-labs/skills/find-skills", "SKILL.md"), "restored\n");
+    await writeFile(dir(out1, "vercel-labs/skills/find-skills", "SKILL.md"), findSkillsFiles(findSkillsRev)[0].contents);
     // 3. index order broken
     const reversed = (await readRows(out1)).reverse();
     await writeFile(path.join(out1, "skills.jsonl"), reversed.map((r) => JSON.stringify(r)).join("\n") + "\n");
@@ -479,6 +579,7 @@ test("scraper end-to-end against mock API", async () => {
     const t4 = await verify(out1);
     assert.equal(t4.status, 1);
     assert.match(t4.stderr, /skills\.jsonl\.tmp/);
+    await rm(path.join(out1, "skills.jsonl.tmp")); // the following runs must start clean
     // 5. equal-installs rows out of id order (find-skills ties with wei rd~x)
     const tied = (await readRows(out1)).map((r, i) => (i === 0 ? { ...r, installs: 99 } : r));
     await writeFile(path.join(out1, "skills.jsonl"), tied.map((r) => JSON.stringify(r)).join("\n") + "\n");
@@ -532,6 +633,46 @@ test("scraper end-to-end against mock API", async () => {
     assert.equal(t12.status, 1);
     assert.match(t12.stderr, /malformed id/);
     await writeFile(path.join(out1, "skills.jsonl"), rows6.map((r) => JSON.stringify(r)).join("\n") + "\n");
+    // 13. trending.json is unparseable
+    await writeFile(path.join(out1, "trending.json"), "{");
+    const t13 = await verify(out1);
+    assert.equal(t13.status, 1);
+    assert.match(t13.stderr, /trending\.json: invalid JSON/);
+    // 14. trending.json holds something else than an array of ids
+    await writeFile(path.join(out1, "trending.json"), JSON.stringify({ top: 1 }));
+    const t14 = await verify(out1);
+    assert.equal(t14.status, 1);
+    assert.match(t14.stderr, /trending\.json: not an array of ids/);
+    // 15. trending.json repeats an id
+    await writeFile(path.join(out1, "trending.json"), JSON.stringify(["a/b/c", "a/b/c"]));
+    const t15 = await verify(out1);
+    assert.equal(t15.status, 1);
+    assert.match(t15.stderr, /trending\.json: duplicate id: a\/b\/c/);
+    await writeFile(
+      path.join(out1, "trending.json"),
+      JSON.stringify(["vercel-labs/skills/find-skills", "claude-office-skills/skills/facebookmeta-ads"], null, 2) + "\n",
+    );
+    // 16. curated.json is unparseable
+    await writeFile(path.join(out1, "curated.json"), "{");
+    const t16 = await verify(out1);
+    assert.equal(t16.status, 1);
+    assert.match(t16.stderr, /curated\.json: invalid JSON/);
+    // 17. curated.json's data is not an array of owners with skill ids
+    await writeFile(path.join(out1, "curated.json"), JSON.stringify({ data: [{ owner: "x" }] }));
+    const t17 = await verify(out1);
+    assert.equal(t17.status, 1);
+    assert.match(t17.stderr, /curated\.json: data is not an array of owners with skill ids/);
+    // 18. curated.json may repeat an id across owners — upstream genuinely
+    // features the same skill under several owner groups — so verify accepts it
+    await writeFile(path.join(out1, "curated.json"), JSON.stringify({ data: [
+      { owner: "x", skills: ["a/b/c"] },
+      { owner: "y", skills: ["a/b/c"] },
+    ] }));
+    const t18 = await verify(out1);
+    assert.equal(t18.status, 0);
+    await writeFile(path.join(out1, "curated.json"), JSON.stringify(CURATED_REDUCED, null, 2) + "\n");
+    const t19 = await verify(out1);
+    assert.equal(t19.status, 0);
 
     // --- run 10: upstream delists a skill. A full run drops its row AND its
     // content directory (the row-iff-directory invariant must keep holding,

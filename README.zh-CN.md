@@ -1,6 +1,6 @@
 # skills.sh 数据镜像
 
-[skills.sh](https://www.skills.sh) 全站 GitHub 来源技能的每日快照:排行榜以可查询的索引形式保存(`skills.jsonl`),同时附带每个技能的完整文件(`skills/`)。well-known(域名)来源的技能不做镜像——它们没有可归属的仓库。
+[skills.sh](https://www.skills.sh) 全站 GitHub 来源技能的每日快照:排行榜以可查询的索引形式保存(`skills.jsonl`),同时附带每个技能的完整文件(`skills/`)。
 
 English: [README.md](README.md) · 开发指南(运行 / 校验 / 扩展):[DEVELOPING.zh-CN.md](DEVELOPING.zh-CN.md)
 
@@ -8,6 +8,8 @@ English: [README.md](README.md) · 开发指南(运行 / 校验 / 扩展):[DEVEL
 
 ```
 ├── skills.jsonl   每个技能一行,按 installs 降序 —— 查询 / 筛选 / 排行在这里
+├── trending.json  trending 榜单中前 100 个 GitHub 来源 id,按榜单顺序
+├── curated.json   官方精选技能的 id,按 owner 分组
 ├── stats.json     产出该快照那一次运行的统计(条目数、变化数、失败明细)
 └── skills/        每个技能一个目录,目录名即技能 id
     └── vercel-labs/skills/find-skills/   ({owner}/{repo}/{slug})
@@ -28,14 +30,14 @@ English: [README.md](README.md) · 开发指南(运行 / 校验 / 扩展):[DEVEL
 }
 ```
 
-| 字段 | 含义 |
-|---|---|
-| `id`、`installs`、`url` | 来自 skills.sh 排行榜(id 已编码 source 和 slug:`{owner}/{repo}/{slug}`) |
-| `stars` | 所在 GitHub 仓库的 star 数(id 的前两段即仓库);仓库已删除或未知时为 `null` |
-| `description` | 取自技能 `SKILL.md` 的 frontmatter;没有时为 `null` |
-| `hash` | 技能文件内容的 SHA-256;未知时为 `null` |
-| `fetchedAt` | 当前内容版本首次抓取的时间 |
-| `audits` | 使用 `--audits` 时:合作方审计结果(`provider`、`status`、`riskLevel`…);`[]` = 尚无人审计 |
+| 字段                    | 含义                                                                     |
+| --------------------- | ---------------------------------------------------------------------- |
+| `id`、`installs`、`url` | 来自 skills.sh 排行榜(id 已编码 source 和 slug:`{owner}/{repo}/{slug}`)         |
+| `stars`               | 所在 GitHub 仓库的 star 数(id 的前两段即仓库);仓库已删除或未知时为 `null`                     |
+| `description`         | 取自技能 `SKILL.md` 的 frontmatter;没有时为 `null`                              |
+| `hash`                | 技能文件内容的 SHA-256;未知时为 `null`                                            |
+| `fetchedAt`           | 当前内容版本首次抓取的时间                                                          |
+| `audits`              | 使用 `--audits` 时:合作方审计结果(`provider`、`status`、`riskLevel`…);`[]` = 尚无人审计 |
 
 两条保证,每次运行后都会做完整性校验:
 
@@ -44,9 +46,13 @@ English: [README.md](README.md) · 开发指南(运行 / 校验 / 扩展):[DEVEL
 
 边缘情况(抓取失败、`--limit` 运行、技能下架)见 [DEVELOPING.zh-CN.md](DEVELOPING.zh-CN.md)。
 
+`trending.json` 是 trending 榜单中前 100 个 GitHub 来源的 id,每次运行通过 `GET /api/v1/skills?view=trending&per_page=200`(单次请求)重新抓取——200 的深度足以在跳过 well-known(域名)来源后仍覆盖前 100 的截断点。它是一个纯 JSON 数组,按上游榜单顺序排列——与索引使用同一种规范化 id,因此技能的名次就是数组下标。
+
+两个文件都只保留 `skills.jsonl` 没有的内容:`trending.json` 与 `curated.json` 中按 owner 分组的 `skills` 数组都是纯 id 列表(索引刻意丢弃的每个技能级字段——`installs`、`url`,以及冗余的展示字段 `slug`、`name`、`source`、`sourceType`、`installUrl`——在这里同样丢弃),id 与索引使用同一种规范化形式。`curated.json` 来自 `/api/v1/skills/curated`,额外保留该接口独有的内容:按 owner 分组的 `owner` / `totalInstalls` / `featuredRepo` / `featuredSkill`(不做来源过滤——精选名单由上游决定),以及顶层的 `totalOwners` / `totalSkills` / `generatedAt`。上游可能把同一技能列在多个 owner 名下,因此 id 允许跨组重复。
+
 ## 如何获取数据
 
-每日发布到 [`dist` 分支](../../tree/dist)——每个提交都是分支根目录下的完整快照。两种取用方式:直接从 GitHub 获取单个文件,或克隆整份快照。
+每日发布到 [`dist`](../../tree/dist) [分支](../../tree/dist)——每个提交都是分支根目录下的完整快照。两种取用方式:直接从 GitHub 获取单个文件,或克隆整份快照。
 
 ### 获取单个文件
 

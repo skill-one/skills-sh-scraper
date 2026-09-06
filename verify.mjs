@@ -13,6 +13,7 @@
  *     verbatim, including files like _meta.json that skills may ship) and
  *     every directory belongs to a row
  *   - stats.json parses and its indexedRows count matches the index
+ *   - trending.json / curated.json are well-shaped id lists
  *   - no .tmp / skills.jsonl.tmp leftovers from interrupted runs
  *
  * Usage: node verify.mjs [--out data]
@@ -50,6 +51,8 @@ function checkRow(row) {
 
 let dirCount = 0;
 let rowCount = 0;
+let trendingCount = null;
+let curatedOwners = null;
 const text = await readFile(path.join(OUT_DIR, "skills.jsonl"), "utf8").catch(() => null);
 if (text === null) {
   problem(`skills.jsonl not found under ${OUT_DIR}`);
@@ -130,6 +133,52 @@ if (text === null) {
     }
   }
   if (await exists(path.join(OUT_DIR, "stats.json.tmp"))) problem("stats.json.tmp leftover from an interrupted run");
+
+  // trending.json: the trending view's first 100 github-sourced ids in
+  // upstream rank order (the join key back into the index).
+  const trendingRaw = await readFile(path.join(OUT_DIR, "trending.json"), "utf8").catch(() => null);
+  if (trendingRaw === null) {
+    problem("trending.json not found");
+  } else {
+    try {
+      const ids = JSON.parse(trendingRaw);
+      if (!Array.isArray(ids) || !ids.every((id) => typeof id === "string" && id)) {
+        problem("trending.json: not an array of ids");
+      } else {
+        const seenIds = new Set();
+        for (const id of ids) {
+          if (seenIds.has(id)) problem(`trending.json: duplicate id: ${id}`);
+          seenIds.add(id);
+        }
+        trendingCount = ids.length;
+      }
+    } catch {
+      problem("trending.json: invalid JSON");
+    }
+  }
+  if (await exists(path.join(OUT_DIR, "trending.json.tmp"))) problem("trending.json.tmp leftover from an interrupted run");
+
+  // curated.json: officially featured skills grouped by owner, per-skill
+  // entries reduced to ids. The list is kept verbatim — upstream
+  // legitimately repeats a skill under several owners, so ids are not
+  // required to be unique across groups.
+  const curatedRaw = await readFile(path.join(OUT_DIR, "curated.json"), "utf8").catch(() => null);
+  if (curatedRaw === null) {
+    problem("curated.json not found");
+  } else {
+    try {
+      const curated = JSON.parse(curatedRaw);
+      const owners = curated?.data;
+      const shaped =
+        Array.isArray(owners) &&
+        owners.every((o) => o && typeof o === "object" && Array.isArray(o.skills) && o.skills.every((s) => typeof s === "string" && s));
+      if (!shaped) problem("curated.json: data is not an array of owners with skill ids");
+      else curatedOwners = owners.length;
+    } catch {
+      problem("curated.json: invalid JSON");
+    }
+  }
+  if (await exists(path.join(OUT_DIR, "curated.json.tmp"))) problem("curated.json.tmp leftover from an interrupted run");
 }
 
 if (problems.length) {
@@ -138,4 +187,6 @@ if (problems.length) {
   console.error(`verify: ${problems.length} problem(s) in ${OUT_DIR}`);
   process.exit(1);
 }
-console.log(`OK: ${rowCount} rows, ${dirCount} content directories, 0 problems (${OUT_DIR})`);
+console.log(
+  `OK: ${rowCount} rows, ${dirCount} content directories, ${trendingCount ?? "no"} trending, ${curatedOwners ?? "no"} curated owners, 0 problems (${OUT_DIR})`,
+);

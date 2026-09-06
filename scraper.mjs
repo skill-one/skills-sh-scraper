@@ -13,8 +13,12 @@
  * Output shape:
  *   data/skills.jsonl                       index: one row per github-sourced
  *                                           skill whose files are on disk
- *   data/skills/{owner}/{repo}/{slug}/      pure skill files, nothing else
- *                                           (mirrors the id segment by segment)
+ *   data/trending.json                      the trending view's first 100
+ *                                           github-sourced ids, in upstream
+ *                                           rank order
+ *   data/curated.json                       the official curated partners and
+ *                                           their skills' ids, verbatim
+ *                                           grouping
  *   data/skills/{owner}/{repo}/{slug}/      pure skill files, nothing else
  *                                           (mirrors the id segment by segment)
  *   data/stats.json                         this run's stats: timing, entry
@@ -168,6 +172,58 @@ async function fetchLeaderboard(api) {
   }
 }
 
+// Trending and curated skill entries carry per-skill fields the index
+// deliberately drops (installs, url, and the redundant display data slug,
+// name, source, sourceType, installUrl). Only the canonical id survives —
+// the join key back into skills.jsonl.
+
+// The trending view's first 100 github-sourced skills (documented as
+// view=trending), a single per_page=200 request — deep enough that its first
+// 100 github-sourced entries cover the top-100 cutoff even after well-known
+// entries are skipped (like at the leaderboard). Ids are normalized to
+// skills.sh's canonical form (see canonicalId in lib.mjs) and kept in
+// upstream rank order.
+const TRENDING_COUNT = 100;
+async function fetchTrending(api) {
+  const { data } = await api(`/api/v1/skills?view=trending&per_page=${TRENDING_COUNT * 2}`);
+  const ids = [];
+  const seen = new Set();
+  let nonGithub = 0;
+  for (const skill of data ?? []) {
+    if (skill.sourceType !== "github") {
+      nonGithub++;
+      continue;
+    }
+    const id = canonicalId(skill);
+    if (!seen.has(id)) {
+      seen.add(id);
+      if (ids.length < TRENDING_COUNT) ids.push(id);
+    }
+  }
+  return { ids, nonGithub };
+}
+
+// The curated view: officially featured skills grouped by owner, with the
+// owner's aggregate installs and featured repo/skill plus top-level counts
+// and the list's generation timestamp — all unique to this endpoint, kept
+// verbatim. Per-skill entries are reduced to their canonical ids. No source
+// filtering: the list is curated upstream.
+async function fetchCurated(api) {
+  const raw = await api("/api/v1/skills/curated");
+  return {
+    generatedAt: raw.generatedAt ?? null,
+    totalOwners: raw.totalOwners ?? null,
+    totalSkills: raw.totalSkills ?? null,
+    data: (raw.data ?? []).map((owner) => ({
+      owner: owner.owner,
+      totalInstalls: owner.totalInstalls,
+      featuredRepo: owner.featuredRepo ?? null,
+      featuredSkill: owner.featuredSkill ?? null,
+      skills: (owner.skills ?? []).map(canonicalId),
+    })),
+  };
+}
+
 // Previous run's index drives resume: for skills whose directory is already
 // on disk it remembers hash/fetchedAt/audits without re-fetching them.
 async function loadPrevIndex() {
@@ -295,9 +351,24 @@ const githubApi = makeApiGet({
 await rm(path.join(OUT_DIR, ".tmp"), { recursive: true, force: true });
 await mkdir(path.join(OUT_DIR, "skills"), { recursive: true });
 
-console.error(`[1/3] Fetching leaderboard from ${API_BASE} ...`);
+console.error(`[1/5] Fetching leaderboard from ${API_BASE} ...`);
 const { skills, nonGithub } = await fetchLeaderboard(skillsApi);
 const prevIndex = await loadPrevIndex();
+
+console.error(`[2/5] Fetching trending top ${TRENDING_COUNT} (github-sourced) from ${API_BASE} ...`);
+const { ids: trending, nonGithub: trendingNonGithub } = await fetchTrending(skillsApi);
+// Written atomically, like the index; independent of the rest of the run.
+const trendingPath = path.join(OUT_DIR, "trending.json");
+await writeFile(`${trendingPath}.tmp`, JSON.stringify(trending, null, 2) + "\n");
+await rename(`${trendingPath}.tmp`, trendingPath);
+console.error(`  trending: ${trending.length}${trendingNonGithub ? ` (${trendingNonGithub} non-github skipped)` : ""}`);
+
+console.error(`[3/5] Fetching curated skills from ${API_BASE} ...`);
+const curated = await fetchCurated(skillsApi);
+const curatedPath = path.join(OUT_DIR, "curated.json");
+await writeFile(`${curatedPath}.tmp`, JSON.stringify(curated, null, 2) + "\n");
+await rename(`${curatedPath}.tmp`, curatedPath);
+console.error(`  curated: ${curated.data.length} owners / ${curated.totalSkills} skills`);
 
 const targets = Number.isFinite(DETAIL_LIMIT) ? skills.slice(0, DETAIL_LIMIT) : skills;
 
@@ -306,7 +377,7 @@ const targets = Number.isFinite(DETAIL_LIMIT) ? skills.slice(0, DETAIL_LIMIT) : 
 // pins stars to null; any other failure just skips the repo, and rows fall
 // back to the previous run's value (or null on first fetch).
 const repos = [...new Set(targets.map(githubRepoOf).filter(Boolean))];
-console.error(`[2/3] Fetching stars for ${repos.length} repositories from ${GITHUB_API_BASE} ...`);
+console.error(`[4/5] Fetching stars for ${repos.length} repositories from ${GITHUB_API_BASE} ...`);
 let reposDone = 0;
 let repoIndex = 0;
 const starWorker = async () => {
@@ -326,7 +397,7 @@ const starWorker = async () => {
 };
 await Promise.all(Array.from({ length: Math.min(CONCURRENCY, repos.length) }, starWorker));
 
-console.error(`[3/3] Fetching content for ${targets.length} skills${WANT_AUDITS ? " + audits" : ""} ...`);
+console.error(`[5/5] Fetching content for ${targets.length} skills${WANT_AUDITS ? " + audits" : ""} ...`);
 
 const rows = [];
 let index = 0;

@@ -5,10 +5,14 @@ How to run, verify, and extend the scraper. For using the data, see [README.md](
 ## How it works
 
 1. `GET /api/v1/skills?per_page=500&page=N` — paginate the leaderboard (~17 requests for the whole catalogue). Only github-sourced entries (`sourceType: "github"`) are kept; well-known (domain) sources have no repository to attribute and are counted in `nonGithub`.
-2. `GET https://api.github.com/repos/{owner}/{repo}` — fetch each unique repository's `stargazers_count` (~1,200 requests: skills cluster on shared repos). A 404 (repo deleted) pins `stars` to `null`; any other failure leaves the previous run's value in place.
-3. `GET /api/v1/skills/{source}/{skill}` — fetch each skill's files (the `files` array carries the full text). Files are written to a temp dir and renamed into place, so an existing directory is always complete.
-4. Merge metadata into a single `skills.jsonl` — one row per skill with saved content, sorted by installs desc, written atomically at the end.
-5. Write `stats.json` — the run's stats, published alongside the dataset. Only fields not trivially derivable from the others:
+2. `GET /api/v1/skills?view=trending&per_page=200` — the trending view in a single request; deep enough that its first 100 GitHub-sourced entries cover the top-100 cutoff even after well-known entries are skipped (like at the leaderboard). Written to `trending.json` as an id array in upstream rank order, with the same canonical id normalization as the leaderboard's.
+3. `GET /api/v1/skills/curated` — the officially featured skills grouped by owner. Written to `curated.json`: the owner aggregates and top-level counts verbatim (no source filtering — the list is curated upstream), per-skill entries reduced to canonical ids.
+4. `GET https://api.github.com/repos/{owner}/{repo}` — fetch each unique repository's `stargazers_count` (~1,200 requests: skills cluster on shared repos). A 404 (repo deleted) pins `stars` to `null`; any other failure leaves the previous run's value in place.
+5. `GET /api/v1/skills/{source}/{skill}` — fetch each skill's files (the `files` array carries the full text). Files are written to a temp dir and renamed into place, so an existing directory is always complete.
+6. Merge metadata into a single `skills.jsonl` — one row per skill with saved content, sorted by installs desc, written atomically at the end.
+7. Write `stats.json` — the run's stats, published alongside the dataset. Only fields not trivially derivable from the others:
+
+Both `trending.json` and the per-owner `skills` arrays in `curated.json` are plain id lists: every per-skill field the index deliberately drops (`installs`, `url`, and the redundant display data `slug`, `name`, `source`, `sourceType`, `installUrl`) is dropped there too, so only the canonical id — the join key back into `skills.jsonl` — survives.
 
 | Field | Meaning |
 |---|---|
@@ -61,7 +65,7 @@ node scraper.mjs --audits                 # also fetch security audits (doubles 
 | 2. Artifact verifier | Is a dataset intact? | nothing (no network) | `node verify.mjs --out data` |
 | 3. Real API run | Does the live API still behave? | token | `node scraper.mjs --limit 5 && node verify.mjs` |
 
-`verify.mjs` is the gate before trusting or uploading a dataset: every line parses, ids unique, rows sorted by installs desc (ties by id), fields well-formed, no two rows sharing a sanitized directory name, rows and content directories match exactly (every row has a directory, no orphan directories), `stats.json` present, parseable and consistent with the index, no `.tmp` leftovers. Local quickstart:
+`verify.mjs` is the gate before trusting or uploading a dataset: every line parses, ids unique, rows sorted by installs desc (ties by id), fields well-formed, no two rows sharing a sanitized directory name, rows and content directories match exactly (every row has a directory, no orphan directories), `stats.json` present, parseable and consistent with the index, `trending.json` / `curated.json` well-shaped id lists, no `.tmp` leftovers. Local quickstart:
 
 ```bash
 npm test                          # fast, no secrets
