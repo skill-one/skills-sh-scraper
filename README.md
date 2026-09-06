@@ -21,7 +21,7 @@ Or produce it yourself: `node scraper.mjs` — see [DEVELOPING.md](DEVELOPING.md
 
 ```
 ├── skills.jsonl   one row per saved skill, sorted by installs desc (ties by id) — query / filter / rank here
-├── stats.json     the producing run's stats — elapsed time, entry counts, failed ids
+├── stats.json     the producing run's stats — entry counts, changes, failed ids
 └── skills/        one directory per skill — read / copy files here
     ├── vercel-labs/skills/find-skills/     the skill id, one directory level per "/"
     │   └── SKILL.md
@@ -33,7 +33,7 @@ Locally the scraper writes this into `data/` (`node scraper.mjs`); on the `dist`
 
 A skill directory contains exactly the files the upstream skill ships — copy it straight into an agent's skills folder. The index and the content directories match exactly — a row exists if and only if its directory exists — and a directory that exists is complete. Both are integrity-checked after every run.
 
-`skills.jsonl` rows carry the skills.sh leaderboard fields (`id`, `slug`, `name`, `source`, `sourceType`, `installs`, `installUrl`, `url`) plus:
+Each `skills.jsonl` row carries `id`, `installs` and `url` from the skills.sh leaderboard (the other leaderboard fields are redundant: the id already encodes source and slug) plus:
 
 | Field | Meaning |
 |---|---|
@@ -42,18 +42,19 @@ A skill directory contains exactly the files the upstream skill ships — copy i
 | `fetchedAt` | when the current content version was first fetched; carried over while the hash is unchanged (content itself is re-downloaded every run) |
 | `audits` | with `--audits`: partner audit results (`provider`, `status`, `riskLevel`, …); `[]` = none yet. Reused while the content hash is unchanged, re-fetched when it changes |
 
-Skills left out of the index: duplicates (`isDuplicate` on the leaderboard) and skills with no upstream file snapshot. A skill whose fetch failed keeps its previous snapshot — index row plus content directory — until a later run fetches it again; skills never fetched successfully are left out. All of them are retried every run. Rows kept from the previous index count as `carried over`: a failed fetch, or — with `--limit` — a skill outside the limit, whose content is still on disk.
+Skills left out of the index: duplicates (`isDuplicate` on the leaderboard) and skills with no upstream file snapshot. A skill whose fetch failed keeps its previous snapshot — index row plus content directory — until a later run fetches it again; skills never fetched successfully are left out. All of them are retried every run. A skill that disappears from the leaderboard is removed from the index together with its content directory — on full runs; a limited run carries every unevaluated row over instead. Rows kept from the previous index count as `carried over`: a failed fetch, or — with `--limit` — a skill outside the limit, whose content is still on disk.
 
-`stats.json` summarizes the run that produced the snapshot:
+`stats.json` summarizes the run that produced the snapshot (only fields not trivially derivable from the others):
 
 | Field | Meaning |
 |---|---|
-| `startedAt`, `finishedAt`, `durationMs` | when the run started / ended, and how long it took |
-| `apiBase`, `limit`, `audits` | run configuration (`limit` is `null` for a full scrape) |
+| `startedAt`, `finishedAt` | when the run started / ended (`durationMs` is their difference) |
+| `limit`, `audits` | run configuration (`limit` is `null` for a full scrape) |
 | `leaderboardTotal` | unique leaderboard entries after deduplication |
-| `fetched` | skills content was requested for (the whole leaderboard, or the first `limit`) |
-| `saved`, `updated`, `dropped`, `failed`, `carriedOver` | outcome counters; `failedIds` lists the failed skill ids |
-| `indexedRows` | lines in `skills.jsonl` (= `saved` + `updated` + `carriedOver`) |
+| `indexedRows` | lines in `skills.jsonl` |
+| `changed` | rows whose content version changed this run (first fetch or a new upstream hash) — exactly the rows whose `fetchedAt` was re-stamped |
+| `added`, `removed` | skills entering / leaving the index: newly listed upstream, and no longer listed (the row and its content directory are deleted; full runs only — limited runs carry every unevaluated row over) |
+| `dropped`, `failed`, `carriedOver` | outcome counters; `failedIds` lists the failed skill ids |
 
 ## Using the data
 

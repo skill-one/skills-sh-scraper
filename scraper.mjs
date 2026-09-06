@@ -18,7 +18,10 @@
  * an upstream snapshot are left out (and retried on the next run). A skill
  * whose fetch fails keeps its previous snapshot — index row and content
  * directory — until a later run fetches it again; skills never fetched
- * successfully stay out of the index. The final summary counts all of them.
+ * successfully stay out of the index. A skill that disappears from the
+ * leaderboard is removed from the index along with its content directory
+ * (full runs; limited runs carry every unevaluated row over instead).
+ * The final summary counts all of these outcomes.
  *
  * Usage:
  *   node scraper.mjs                    # full scrape into ./data
@@ -157,10 +160,10 @@ async function loadPrevIndex() {
   }
 }
 
-// Returns { row, action } for the index. row is null when the skill is left
-// out of the index: duplicates (stale content removed too) and skills without
-// an upstream snapshot. Fetch errors propagate to the worker, which also
-// leaves the skill out (retry on the next run).
+// Returns the index row for the skill, or null when the skill is left out of
+// the index: duplicates (stale content removed too) and skills without an
+// upstream snapshot. Fetch errors propagate to the worker, which also leaves
+// the skill out (retry on the next run).
 //
 // Content is fully re-downloaded and rewritten on every run. The previous row
 // only pins fetchedAt: while the upstream hash is unchanged, fetchedAt keeps
@@ -169,12 +172,12 @@ async function fetchSkill(skill, prev, token) {
   const dir = skillDir(skill.id);
   if (skill.isDuplicate) {
     await rm(dir, { recursive: true, force: true });
-    return { row: null, action: "dropped" };
+    return null;
   }
 
   const detail = await apiGet(`/api/v1/skills/${encId(skill.id)}`, token);
   if (!Array.isArray(detail.files) || !detail.files.length) {
-    return { row: null, action: "dropped" }; // no upstream snapshot; retried next run
+    return null; // no upstream snapshot; retried next run
   }
   const skillMd = detail.files.find((f) => f.path === "SKILL.md");
 
@@ -208,14 +211,19 @@ async function fetchSkill(skill, prev, token) {
   }
 
   const unchanged = !!detail.hash && detail.hash === prev?.hash;
+  // Only the fields not derivable elsewhere: the id encodes source and slug
+  // (the directory layout mirrors it), the rest of the leaderboard payload
+  // (name, source, sourceType, installUrl) is redundant display data.
   const row = {
-    ...skill,
+    id: skill.id,
+    installs: skill.installs,
+    url: skill.url,
     description: skillDescription(skillMd?.contents),
     hash: detail.hash ?? null,
     fetchedAt: unchanged && prev.fetchedAt ? prev.fetchedAt : new Date().toISOString(),
   };
   await maybeAttachAudits(row, prev, unchanged, token);
-  return { row, action: dirExists ? "updated" : "saved" };
+  return row;
 }
 
 // With --audits, attach partner audit results. They are re-fetched whenever
@@ -250,20 +258,26 @@ console.error(`[2/2] Fetching content for ${targets.length} skills${WANT_AUDITS 
 const rows = [];
 let index = 0;
 let done = 0;
-let saved = 0;
-let updated = 0;
+let changed = 0;
+let added = 0;
 let dropped = 0;
 let carried = 0;
 const failed = [];
 const worker = async () => {
   while (index < targets.length) {
     const skill = targets[index++];
+    const prev = prevIndex.get(skill.id);
     try {
-      const { row, action } = await fetchSkill(skill, prevIndex.get(skill.id), token);
-      if (row) rows.push(row);
-      if (action === "saved") saved++;
-      else if (action === "updated") updated++;
-      else dropped++;
+      const row = await fetchSkill(skill, prev, token);
+      if (row) {
+        rows.push(row);
+        // fetchedAt is re-stamped exactly when the content version changed
+        // (first fetch or a new upstream hash), so it doubles as the
+        // run's change count. Every fetched row absent from the previous
+        // index is a skill newly listed upstream.
+        if (row.fetchedAt !== prev?.fetchedAt) changed++;
+        if (!prevIndex.has(skill.id)) added++;
+      } else dropped++;
     } catch (err) {
       // Per-skill failures (bad upstream ids, dead repos) don't fail the run:
       // the skill is retried on the next run. Its previous snapshot, if any,
@@ -274,14 +288,13 @@ const worker = async () => {
       // process with a non-zero exit code.
       failed.push(skill.id);
       console.error(`  FAIL ${skill.id}: ${err.message}`);
-      const prev = prevIndex.get(skill.id);
       if (prev && (await exists(skillDir(skill.id)))) {
         rows.push(prev);
         carried++;
       }
     }
     if (++done % 100 === 0 || done === targets.length) {
-      console.error(`  details: ${done}/${targets.length} (saved ${saved}, updated ${updated}, dropped ${dropped}, failed ${failed.length})`);
+      console.error(`  details: ${done}/${targets.length} (changed ${changed}, dropped ${dropped}, failed ${failed.length})`);
     }
   }
 };
@@ -302,6 +315,14 @@ if (targets.length < skills.length) {
     }
   }
 }
+
+// Skills in the previous index that the current leaderboard no longer lists
+// (full runs only — limited runs carry every unevaluated row over, so they
+// never remove anything). Drop their content directories too, so the
+// "row if and only if directory" invariant keeps holding.
+const indexed = new Set(rows.map((r) => r.id));
+const removed = [...prevIndex.keys()].filter((id) => !indexed.has(id));
+for (const id of removed) await rm(skillDir(id), { recursive: true, force: true });
 
 // Sort by installs desc, ties by id: workers finish out of order, so the row
 // order would otherwise be nondeterministic and daily snapshots would differ
@@ -325,29 +346,29 @@ async function pruneEmpty(dir) {
 }
 await pruneEmpty(path.join(OUT_DIR, "skills"));
 
-// Run stats, published alongside the dataset: timing, entry counts and the
-// failed ids (the human summary below is the same numbers, less precise).
+// Run stats, published alongside the dataset. Only fields a human (or a
+// consumer) cannot trivially derive: run configuration, timing, and the
+// outcome counters — including `changed`, the rows whose `fetchedAt` was
+// re-stamped because their content version changed.
 const finishedAt = new Date();
 const stats = {
-  apiBase: API_BASE,
-  limit: Number.isFinite(DETAIL_LIMIT) ? DETAIL_LIMIT : null,
-  audits: WANT_AUDITS,
   startedAt: startedAt.toISOString(),
   finishedAt: finishedAt.toISOString(),
-  durationMs: finishedAt - startedAt,
+  limit: Number.isFinite(DETAIL_LIMIT) ? DETAIL_LIMIT : null,
+  audits: WANT_AUDITS,
   leaderboardTotal: skills.length,
-  fetched: targets.length,
-  saved,
-  updated,
+  indexedRows: rows.length,
+  changed,
+  added,
+  removed: removed.length,
   dropped,
   failed: failed.length,
   carriedOver: carried,
   failedIds: failed,
-  indexedRows: rows.length,
 };
 const statsPath = path.join(OUT_DIR, "stats.json");
 await writeFile(`${statsPath}.tmp`, JSON.stringify(stats, null, 2) + "\n");
 await rename(`${statsPath}.tmp`, statsPath);
 
-console.error(`Done: saved=${saved}, updated=${updated}, dropped=${dropped}, failed=${failed.length} (carried over: ${carried}) -> ${OUT_DIR}/`);
+console.error(`Done: changed=${changed}, added=${added}, removed=${removed.length}, dropped=${dropped}, failed=${failed.length} (carried over: ${carried}) -> ${OUT_DIR}/`);
 // Machine-readable numbers live in ${OUT_DIR}/stats.json (written above).
