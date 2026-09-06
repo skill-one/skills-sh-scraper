@@ -14,17 +14,15 @@ export const argValue = (args, flag) => {
 export const safeSegment = (s) => (s === "." || s === ".." ? "_" : s.replace(/[^\w.-]/g, "_"));
 export const dirName = (id) => id.split("/").map(safeSegment).join("/");
 
-// skills.sh keys a skill by its slug with the "/" stripped out of it, but the
-// leaderboard still carries the raw id (e.g. "owner/repo/face/book" whose
-// canonical form is "owner/repo/facebook"). The detail API only routes
-// /{owner}/{repo}/{skill} and cannot address the raw form, so normalize to
-// the canonical shape: keep the source prefix ("owner/repo" for github,
-// "domain" for well-known) and join the slug segments without separators.
-// Both forms collapse to one entry, so this must run before deduplication.
-export const canonicalId = (id, sourceType) => {
-  const segs = id.split("/");
-  const prefix = sourceType === "well-known" ? 1 : 2;
-  return segs.length <= prefix ? id : [...segs.slice(0, prefix), segs.slice(prefix).join("")].join("/");
+// skills.sh keys a skill by `${source}/${slug}` with any "/" stripped out of
+// the slug, and that canonical form is the only way its detail API can
+// address multi-segment slugs. The leaderboard carries the raw id (the slug
+// may still contain "/"), so normalize with the entry's own source and slug
+// fields — no segment counting: a well-known source can span several
+// segments ("affaan-m/ecc") and a github source is exactly two.
+export const canonicalId = (skill) => {
+  if (typeof skill.source !== "string" || typeof skill.slug !== "string") return skill.id;
+  return `${skill.source}/${skill.slug.split("/").join("")}`;
 };
 
 // `description` from a SKILL.md's YAML frontmatter. Minimal on purpose: a

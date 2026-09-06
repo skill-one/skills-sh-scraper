@@ -54,6 +54,7 @@ const FILES = {
   "owner/repo/bad-id": [{ path: "SKILL.md", contents: "# bad-id\n" }], // detail 400s while badIdBroken
   // canonical form: the raw leaderboard id is claude-office-skills/skills/facebook/meta-ads
   "claude-office-skills/skills/facebookmeta-ads": [{ path: "SKILL.md", contents: "---\nname: Facebook Meta Ads\ndescription: slash slug normalized\n---\n# fb\n" }],
+  "affaan-m/ecc/security-review": [{ path: "SKILL.md", contents: "---\nname: Security Review\ndescription: multi-segment well-known source\n---\n# sr\n" }],
 };
 
 // "bad-id" rejects the detail request outright until repaired — used to test
@@ -61,8 +62,8 @@ const FILES = {
 let badIdBroken = true;
 
 // Ids hidden from the leaderboard — simulates upstream delisting / re-listing.
-// The slash-slug skill starts hidden so it only joins in run 12.
-const gone = new Set(["claude-office-skills/skills/facebook/meta-ads"]);
+// The two skills below start hidden so they only join in runs 12 and 13.
+const gone = new Set(["claude-office-skills/skills/facebook/meta-ads", "affaan-m/ecc/security-review"]);
 
 const filesFor = (id) => (id === "vercel-labs/skills/find-skills" ? findSkillsFiles(findSkillsRev) : FILES[id]);
 
@@ -85,6 +86,9 @@ const SKILLS = [
   // raw leaderboard id carries a slash inside the slug (4 segments); skills.sh
   // keys this skill by the slug with the "/" stripped
   { id: "claude-office-skills/skills/facebook/meta-ads", slug: "facebook/meta-ads", name: "facebook", source: "claude-office-skills/skills", installs: 7, sourceType: "github", installUrl: "npx skills add claude-office-skills/skills/facebook/meta-ads", url: "https://skills.sh/claude-office-skills/skills/facebookmeta-ads" },
+  // well-known with a MULTI-SEGMENT source: the id is already canonical and
+  // must pass through normalization unchanged
+  { id: "affaan-m/ecc/security-review", slug: "security-review", name: "security-review", source: "affaan-m/ecc", installs: 5, sourceType: "well-known", installUrl: null, url: "https://skills.sh/site/affaan-m.ecc/security-review" },
 ];
 
 test("scraper end-to-end against mock API", async () => {
@@ -115,7 +119,7 @@ test("scraper end-to-end against mock API", async () => {
     const id = decodeURIComponent(url.pathname.slice("/api/v1/skills/".length));
     // The detail API only addresses skills.sh's canonical ids (slug slashes
     // stripped): a request for the raw form is not found.
-    const skill = SKILLS.find((s) => canonicalId(s.id, s.sourceType) === id);
+    const skill = SKILLS.find((s) => canonicalId(s) === id);
     if (!skill) {
       res.statusCode = 404;
       res.end(JSON.stringify({ error: "not_found" }));
@@ -499,6 +503,28 @@ test("scraper end-to-end against mock API", async () => {
     const v12 = await verify(out1);
     assert.equal(v12.status, 0, `verify out1 failed after run 12:\n${v12.stdout}${v12.stderr}`);
     assert.match(v12.stdout, /OK: 6 rows, 6 content directories/);
+
+    // --- run 13: a well-known skill whose source spans several segments
+    // ("affaan-m/ecc"). Its id must pass through normalization unchanged —
+    // merging the source into the slug would 404 the detail fetch.
+    gone.delete("affaan-m/ecc/security-review");
+    const r13 = await run(out1);
+    assert.equal(r13.status, 0, `run 13 failed:\n${r13.stderr}`);
+    assert.match(r13.stderr, /changed=1, added=1, removed=0, dropped=2, failed=1 \(carried over: 1\)/);
+    const stats13 = await readStats(out1);
+    assert.equal(stats13.added, 1);
+    assert.deepEqual(stats13.failedIds, ["owner/repo/bad-id"]);
+    assert.deepEqual(
+      (await readRows(out1)).map((r) => r.id),
+      [...rows1.map((r) => r.id), "claude-office-skills/skills/facebookmeta-ads", "affaan-m/ecc/security-review", "owner/repo/bad-id"],
+    );
+    assert.equal(
+      await readFile(dir(out1, "affaan-m/ecc/security-review", "SKILL.md"), "utf8"),
+      FILES["affaan-m/ecc/security-review"][0].contents,
+    );
+    const v13 = await verify(out1);
+    assert.equal(v13.status, 0, `verify out1 failed after run 13:\n${v13.stdout}${v13.stderr}`);
+    assert.match(v13.stdout, /OK: 7 rows, 7 content directories/);
   } finally {
     server.close();
     await rm(workDir, { recursive: true, force: true });

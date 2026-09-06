@@ -137,7 +137,7 @@ async function fetchLeaderboard(token) {
     // Ids are normalized to skills.sh's canonical form first, so a raw and a
     // canonical occurrence of the same skill collapse into one entry too.
     for (const skill of data ?? []) {
-      const id = canonicalId(skill.id, skill.sourceType);
+      const id = canonicalId(skill);
       if (!seen.has(id)) {
         seen.add(id);
         skills.push({ ...skill, id });
