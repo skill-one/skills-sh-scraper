@@ -96,13 +96,15 @@ jobs:
           # pruned objects alive forever and grow the repo.
           git fetch -q origin "+refs/tags/dist/*:refs/tags/dist/*" || true
           kept=""
-          i=0
-          while [ "$i" -lt "$(git rev-list --count HEAD)" ] && [ "$i" -lt 5 ]; do
-            sha=$(git rev-parse "HEAD~$i")
+          n=$(git rev-list --count HEAD); [ "$n" -gt 5 ] && n=5
+          # Oldest first, so when one day was published twice the newest
+          # snapshot of that day wins the tag.
+          while [ "$n" -gt 0 ]; do
+            n=$((n - 1))
+            sha=$(git rev-parse "HEAD~$n")
             day=$(git log -1 --format=%s "$sha"); day=${day##*— }
             git tag -f "dist/$day" "$sha"
             kept="$kept dist/$day"
-            i=$((i + 1))
           done
           for tag in $(git tag -l 'dist/*'); do
             case " $kept " in *" $tag "*) continue ;; esac
