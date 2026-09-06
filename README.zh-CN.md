@@ -6,7 +6,7 @@ English: [README.md](README.md) · 开发指南(运行 / 校验 / 扩展):[DEVEL
 
 ## 数据在哪里
 
-每日发布到 [`dist` 分支](../../tree/dist):每天一个提交,保留最近 5 个。每个提交都是完整快照——`skills.jsonl`(索引)+ `skills/`(全部技能文件):
+每日发布到 [`dist` 分支](../../tree/dist):每天一个提交,保留最近 5 个。每个提交都是完整快照,直接位于分支根目录——`skills.jsonl`(索引)+ `skills/`(全部技能文件):
 
 ```bash
 git clone --depth 1 -b dist https://github.com/skill-one/skills-sh-scraper.git   # 最新快照
@@ -18,15 +18,16 @@ git log dist                                                                    
 ## 数据有哪些
 
 ```
-data/
 ├── skills.jsonl   每个已保存技能一行,按 installs 降序(并列时按 id 升序)—— 查询 / 筛选 / 排行在这里
 ├── stats.json     产出该快照那一次运行的统计 —— 耗时、条目数、失败明细
 └── skills/        每个技能一个目录 —— 读文件 / 拷贝在这里
-    ├── vercel-labs__skills__find-skills/     技能 id 中的 "/" → "__"
+    ├── vercel-labs/skills/find-skills/     即技能 id,按 "/" 逐级一层目录
     │   └── SKILL.md
-    └── mintlify.com__mintlify/              (GitHub: {owner}__{repo}__{slug} · well-known: {domain}__{slug})
+    └── mintlify.com/mintlify/              (GitHub: {owner}/{repo}/{slug} · well-known: {domain}/{slug})
         └── SKILL.md
 ```
+
+本地运行时爬虫把上面的结构写进 `data/`(`node scraper.mjs`);在 `dist` 分支上则直接位于分支根目录。
 
 技能目录里的文件与上游技能完全一致——整个目录可直接拷入 agent 的 skills 文件夹。索引与内容目录严格对应——有行当且仅当有目录——且「目录存在」就意味着「内容完整」。两者每次运行后都会做完整性校验。
 
@@ -54,8 +55,8 @@ data/
 ## 使用数据
 
 ```bash
-cp -r data/skills/vercel-labs__skills__find-skills ~/.agents/skills/   # 目录即技能
-grep -r "pattern" data/skills --include=SKILL.md                     # 全文检索
-jq -s 'sort_by(-.installs)[:20] | map(.id)' data/skills.jsonl        # 安装量前 20
-jq -c 'select(.audits[]?.status == "fail") | .id' data/skills.jsonl  # 未通过合作方审计
+cp -r skills/vercel-labs/skills/find-skills ~/.agents/skills/   # 目录即技能
+grep -r "pattern" skills --include=SKILL.md                     # 全文检索
+jq -s 'sort_by(-.installs)[:20] | map(.id)' skills.jsonl        # 安装量前 20
+jq -c 'select(.audits[]?.status == "fail") | .id' skills.jsonl  # 未通过合作方审计
 ```

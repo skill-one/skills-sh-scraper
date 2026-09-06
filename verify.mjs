@@ -88,12 +88,24 @@ if (text === null) {
     if (!entries.some((e) => e.isFile())) problem(`${label}: content directory is empty`);
     dirCount++;
   }
-  const skillDirs = await readdir(path.join(OUT_DIR, "skills"), { withFileTypes: true }).catch(() => null);
-  if (skillDirs) {
-    for (const entry of skillDirs) {
-      if (entry.isDirectory() && !rowNames.has(entry.name)) problem(`orphan content directory (no index row): ${entry.name}`);
-    }
+  // Every directory under skills/ must be a row's content directory (whose
+  // whole subtree is skill files) or an ancestor of one (the leading id
+  // segments group skills by owner / repo).
+  const ancestors = new Set();
+  for (const name of rowNames.keys()) {
+    const segs = name.split("/");
+    for (let i = 1; i < segs.length; i++) ancestors.add(segs.slice(0, i).join("/"));
   }
+  const walk = async (rel, insideRow) => {
+    for (const entry of await readdir(path.join(OUT_DIR, "skills", rel), { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const sub = rel ? `${rel}/${entry.name}` : entry.name;
+      const isRow = rowNames.has(sub);
+      await walk(sub, insideRow || isRow);
+      if (!insideRow && !isRow && !ancestors.has(sub)) problem(`orphan content directory (no index row): ${sub}`);
+    }
+  };
+  if (await exists(path.join(OUT_DIR, "skills"))) await walk("", false);
 
   if (await exists(path.join(OUT_DIR, ".tmp"))) problem(".tmp leftover from an interrupted run");
   if (await exists(path.join(OUT_DIR, "skills.jsonl.tmp"))) problem("skills.jsonl.tmp leftover from an interrupted run");

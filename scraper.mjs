@@ -8,7 +8,8 @@
  * Output shape:
  *   data/skills.jsonl                       index: one row per skill whose
  *                                           files are on disk under skills/
- *   data/skills/{owner}__{repo}__{slug}/    pure skill files, nothing else
+ *   data/skills/{owner}/{repo}/{slug}/      pure skill files, nothing else
+ *                                           (mirrors the id segment by segment)
  *   data/stats.json                         this run's stats: timing, entry
  *                                           counts, failed ids
  *
@@ -37,7 +38,7 @@
  * up on the next run.
  */
 
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rmdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { argValue, dirName, exists, safeSegment } from "./lib.mjs";
 
@@ -310,6 +311,17 @@ const tmpIndex = `${indexPath}.tmp`;
 await writeFile(tmpIndex, rows.sort(byRank).map((row) => JSON.stringify(row)).join("\n") + (rows.length ? "\n" : ""));
 await rename(tmpIndex, indexPath);
 await rm(path.join(OUT_DIR, ".tmp"), { recursive: true, force: true });
+
+// Prune directories left empty by dropped skills (git drops empty dirs on
+// publish, but the local tree stays tidy). Bottom-up: rmdir fails harmlessly
+// while a directory is still non-empty, so only empty branches disappear.
+async function pruneEmpty(dir) {
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => null);
+  if (!entries) return;
+  for (const entry of entries) if (entry.isDirectory()) await pruneEmpty(path.join(dir, entry.name));
+  await rmdir(dir).catch(() => {});
+}
+await pruneEmpty(path.join(OUT_DIR, "skills"));
 
 // Run stats, published alongside the dataset: timing, entry counts and the
 // failed ids (the human summary below is the same numbers, less precise).

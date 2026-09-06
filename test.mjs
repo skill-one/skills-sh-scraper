@@ -172,25 +172,25 @@ test("scraper end-to-end against mock API", async () => {
     for (const gone of ["contentSaved", "noSnapshot", "error"]) assert.equal(gone in rows1[0], false);
 
     assert.equal(
-      await readFile(dir(out1, "vercel-labs__skills__find-skills", "SKILL.md"), "utf8"),
+      await readFile(dir(out1, "vercel-labs/skills/find-skills", "SKILL.md"), "utf8"),
       findSkillsFiles(0)[0].contents,
     );
     assert.equal(
-      await readFile(dir(out1, "vercel-labs__skills__find-skills", "scripts", "run.sh"), "utf8"),
+      await readFile(dir(out1, "vercel-labs/skills/find-skills", "scripts", "run.sh"), "utf8"),
       findSkillsFiles(0)[1].contents,
     );
     // content dirs contain ONLY skill files (upstream-shipped _meta.json is legit)
-    assert.deepEqual((await readdir(dir(out1, "vercel-labs__skills__find-skills"))).sort(), ["SKILL.md", "_meta.json", "scripts"]);
-    // well-known source: domain__slug directory
-    assert.equal(await readFile(dir(out1, "mintlify.com__mintlify", "SKILL.md"), "utf8"), FILES["mintlify.com/mintlify"][0].contents);
+    assert.deepEqual((await readdir(dir(out1, "vercel-labs/skills/find-skills"))).sort(), ["SKILL.md", "_meta.json", "scripts"]);
+    // well-known source: domain/slug directory
+    assert.equal(await readFile(dir(out1, "mintlify.com/mintlify", "SKILL.md"), "utf8"), FILES["mintlify.com/mintlify"][0].contents);
     // unsafe slug characters are sanitized in directory names
-    assert.equal(await readFile(dir(out1, "owner__repo__wei_rd_x", "SKILL.md"), "utf8"), FILES["owner/repo/wei rd~x"][0].contents);
+    assert.equal(await readFile(dir(out1, "owner/repo/wei_rd_x", "SKILL.md"), "utf8"), FILES["owner/repo/wei rd~x"][0].contents);
     // the transient 500 was retried into a save
-    assert.equal(await readFile(dir(out1, "owner__repo__flaky-500", "SKILL.md"), "utf8"), FILES["owner/repo/flaky-500"][0].contents);
+    assert.equal(await readFile(dir(out1, "owner/repo/flaky-500", "SKILL.md"), "utf8"), FILES["owner/repo/flaky-500"][0].contents);
     // duplicate / no-snapshot / failed skills leave nothing on disk
-    assert.equal(await pathExists(dir(out1, "owner__repo__dup-skill")), false);
-    assert.equal(await pathExists(dir(out1, "owner__repo__rate-limited")), false);
-    assert.equal(await pathExists(dir(out1, "owner__repo__bad-id")), false);
+    assert.equal(await pathExists(dir(out1, "owner/repo/dup-skill")), false);
+    assert.equal(await pathExists(dir(out1, "owner/repo/rate-limited")), false);
+    assert.equal(await pathExists(dir(out1, "owner/repo/bad-id")), false);
     assert.match(r1.stderr, /saved=4, updated=0, dropped=2, failed=1/); // run still exits 0
     // no temp leftovers
     assert.equal(await pathExists(path.join(out1, ".tmp")), false);
@@ -226,7 +226,7 @@ test("scraper end-to-end against mock API", async () => {
     assert.deepEqual(rows2.map((r) => r.fetchedAt), rows1.map((r) => r.fetchedAt)); // carried over
     assert.deepEqual(rows2.map((r) => r.hash), rows1.map((r) => r.hash));
     assert.equal(
-      await readFile(dir(out1, "vercel-labs__skills__find-skills", "SKILL.md"), "utf8"),
+      await readFile(dir(out1, "vercel-labs/skills/find-skills", "SKILL.md"), "utf8"),
       findSkillsFiles(0)[0].contents,
     );
 
@@ -242,12 +242,12 @@ test("scraper end-to-end against mock API", async () => {
     assert.notEqual(rows3[0].fetchedAt, rows1[0].fetchedAt); // re-stamped for the new content
     assert.deepEqual(rows3.slice(1).map((r) => r.fetchedAt), rows1.slice(1).map((r) => r.fetchedAt)); // unchanged hash -> unchanged fetchedAt
     assert.equal(
-      await readFile(dir(out1, "vercel-labs__skills__find-skills", "SKILL.md"), "utf8"),
+      await readFile(dir(out1, "vercel-labs/skills/find-skills", "SKILL.md"), "utf8"),
       findSkillsFiles(1)[0].contents, // new content on disk
     );
 
     // --- run 4: fresh dir with --audits; stale duplicate content is cleaned up
-    await mkdir(dir(out2, "owner__repo__dup-skill"), { recursive: true }); // leftover from an older scrape
+    await mkdir(dir(out2, "owner/repo/dup-skill"), { recursive: true }); // leftover from an older scrape
     const r4 = await run(out2, ["--audits"]);
     assert.equal(r4.status, 0, `run 4 failed:\n${r4.stderr}`);
     assert.equal(hits.detail, 26); // +6 new fetches (the duplicate is skipped, no 429/500 retry left)
@@ -261,7 +261,7 @@ test("scraper end-to-end against mock API", async () => {
       rows4.map((r) => r.id),
       ["vercel-labs/skills/find-skills", "mintlify.com/mintlify", "owner/repo/wei rd~x", "owner/repo/flaky-500"],
     );
-    assert.equal(await pathExists(dir(out2, "owner__repo__dup-skill")), false); // stale duplicate content removed
+    assert.equal(await pathExists(dir(out2, "owner/repo/dup-skill")), false); // stale duplicate content removed
     assert.deepEqual(rows4[0].audits, AUDITS["vercel-labs/skills/find-skills"]);
     assert.deepEqual(rows4[1].audits, []); // audited by nobody -> empty array
 
@@ -273,7 +273,7 @@ test("scraper end-to-end against mock API", async () => {
     assert.match(r5.stderr, /saved=1, updated=4, dropped=2, failed=0/);
     const rows5 = await readRows(out1);
     assert.deepEqual(rows5.map((r) => r.id), [...rows1.map((r) => r.id), "owner/repo/bad-id"]);
-    assert.equal(await readFile(dir(out1, "owner__repo__bad-id", "SKILL.md"), "utf8"), FILES["owner/repo/bad-id"][0].contents);
+    assert.equal(await readFile(dir(out1, "owner/repo/bad-id", "SKILL.md"), "utf8"), FILES["owner/repo/bad-id"][0].contents);
 
     // --- run 6: bad-id breaks again. Its previous snapshot stays on disk, so
     // the previous index row must be carried over: index and directories keep
@@ -289,7 +289,7 @@ test("scraper end-to-end against mock API", async () => {
     assert.deepEqual(stats6.failedIds, ["owner/repo/bad-id"]);
     const rows6 = await readRows(out1);
     assert.deepEqual(rows6[4], rows5[4]); // carried over verbatim: same hash, fetchedAt, fields
-    assert.equal(await readFile(dir(out1, "owner__repo__bad-id", "SKILL.md"), "utf8"), FILES["owner/repo/bad-id"][0].contents);
+    assert.equal(await readFile(dir(out1, "owner/repo/bad-id", "SKILL.md"), "utf8"), FILES["owner/repo/bad-id"][0].contents);
 
     // --- run 7: --limit 1 on an existing dataset. The limit constrains only
     // what is fetched, never the index: skills outside the limit keep their
@@ -347,18 +347,18 @@ test("scraper end-to-end against mock API", async () => {
 
     // --- verifier rejects tampered datasets (problems are reported on stderr)
     // 1. content directory without an index row
-    await mkdir(dir(out1, "owner__repo__orphan"), { recursive: true });
+    await mkdir(dir(out1, "owner/repo/orphan"), { recursive: true });
     const t1 = await verify(out1);
     assert.equal(t1.status, 1);
     assert.match(t1.stderr, /orphan content directory/);
-    await rm(dir(out1, "owner__repo__orphan"), { recursive: true, force: true });
+    await rm(dir(out1, "owner/repo/orphan"), { recursive: true, force: true });
     // 2. index claims content that is gone from disk
-    await rm(dir(out1, "vercel-labs__skills__find-skills"), { recursive: true, force: true });
+    await rm(dir(out1, "vercel-labs/skills/find-skills"), { recursive: true, force: true });
     const t2 = await verify(out1);
     assert.equal(t2.status, 1);
     assert.match(t2.stderr, /no content directory/);
-    await mkdir(dir(out1, "vercel-labs__skills__find-skills"), { recursive: true });
-    await writeFile(dir(out1, "vercel-labs__skills__find-skills", "SKILL.md"), "restored\n");
+    await mkdir(dir(out1, "vercel-labs/skills/find-skills"), { recursive: true });
+    await writeFile(dir(out1, "vercel-labs/skills/find-skills", "SKILL.md"), "restored\n");
     // 3. index order broken
     const reversed = (await readRows(out1)).reverse();
     await writeFile(path.join(out1, "skills.jsonl"), reversed.map((r) => JSON.stringify(r)).join("\n") + "\n");
@@ -380,7 +380,7 @@ test("scraper end-to-end against mock API", async () => {
     // 6. two ids sanitizing to the same directory name
     const colliding = (await readRows(out1)).map((r) => ({ ...r }));
     colliding[1].id = "owner/repo/a b";
-    colliding.splice(2, 0, { ...colliding[1], id: "owner/repo/a_b" }); // both -> owner__repo__a_b
+    colliding.splice(2, 0, { ...colliding[1], id: "owner/repo/a_b" }); // both -> owner/repo/a_b
     await writeFile(path.join(out1, "skills.jsonl"), colliding.map((r) => JSON.stringify(r)).join("\n") + "\n");
     const t6 = await verify(out1);
     assert.equal(t6.status, 1);
