@@ -2,12 +2,19 @@
 /**
  * Scrape all skills from skills.sh and save them locally.
  *
- * Zero dependencies (Node >= 22). Auth: Vercel OIDC token in VERCEL_OIDC_TOKEN
- * (env var, or .env.local produced by `vercel env pull`) — see DEVELOPING.md.
+ * Zero dependencies (Node >= 22). Auth: a Vercel OIDC token in VERCEL_OIDC_TOKEN
+ * (env var, or .env.local produced by `vercel env pull`) for skills.sh, and a
+ * GitHub token in GITHUB_TOKEN for star counts — see DEVELOPING.md.
+ *
+ * Only github-sourced skills (sourceType "github") are mirrored; well-known
+ * sources have no repository to attribute. Each index row records the stars
+ * of the skill's repository (owner/repo = the id's first two segments).
  *
  * Output shape:
- *   data/skills.jsonl                       index: one row per skill whose
- *                                           files are on disk under skills/
+ *   data/skills.jsonl                       index: one row per github-sourced
+ *                                           skill whose files are on disk
+ *   data/skills/{owner}/{repo}/{slug}/      pure skill files, nothing else
+ *                                           (mirrors the id segment by segment)
  *   data/skills/{owner}/{repo}/{slug}/      pure skill files, nothing else
  *                                           (mirrors the id segment by segment)
  *   data/stats.json                         this run's stats: timing, entry
@@ -43,82 +50,88 @@
 
 import { mkdir, readdir, readFile, rename, rmdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { argValue, canonicalId, dirName, exists, safeSegment, skillDescription } from "./lib.mjs";
+import { argValue, canonicalId, dirName, exists, githubRepoOf, safeSegment, skillDescription } from "./lib.mjs";
 
 const API_BASE = (process.env.SKILLS_API_BASE ?? "https://skills.sh").replace(/\/+$/, "");
+const GITHUB_API_BASE = (process.env.GITHUB_API_BASE ?? "https://api.github.com").replace(/\/+$/, "");
 const args = process.argv.slice(2);
 const OUT_DIR = argValue(args, "--out") ?? "data";
 const DETAIL_LIMIT = argValue(args, "--limit") ? Number(argValue(args, "--limit")) : Infinity;
 const WANT_AUDITS = args.includes("--audits");
-const CONCURRENCY = 10; // API rate limit is 600 req/min per (team, project)
+const CONCURRENCY = 10; // request budget shared by both API clients
 const startedAt = new Date();
 
-async function loadToken() {
-  if (process.env.VERCEL_OIDC_TOKEN) return process.env.VERCEL_OIDC_TOKEN;
+// repo -> stargazers_count, filled by the stars phase and read by fetchSkill.
+const repoStars = new Map();
+
+// Tokens come from the environment or .env.local. A missing token is fatal.
+async function loadEnvToken(name, hint) {
+  if (process.env[name]) return process.env[name];
   try {
     const env = await readFile(".env.local", "utf8");
-    const line = env.split("\n").find((l) => l.startsWith("VERCEL_OIDC_TOKEN="));
+    const line = env.split("\n").find((l) => l.startsWith(`${name}=`));
     if (line) return line.slice(line.indexOf("=") + 1).trim().replace(/^["']|["']$/g, "");
   } catch {}
-  console.error(
-    "Missing VERCEL_OIDC_TOKEN.\n" +
-      "Get one with:  npm i -g vercel && vercel link && vercel env pull\n" +
-      "(the token lasts ~12h), or export VERCEL_OIDC_TOKEN yourself. See DEVELOPING.md.",
-  );
+  console.error(`Missing ${name}.\n${hint}`);
   process.exit(1);
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Rolling 60s window, just under the documented 600 req/min limit.
-const RATE_PER_MIN = 590;
-const sentAt = [];
-async function nextSlot() {
-  for (;;) {
-    const now = Date.now();
-    while (sentAt.length && now - sentAt[0] > 60_000) sentAt.shift();
-    if (sentAt.length < RATE_PER_MIN) {
-      sentAt.push(now);
-      return;
-    }
-    await sleep(sentAt[0] + 60_000 - now + 20);
-  }
-}
-
-async function apiGet(pathname, token, { allow404 = false } = {}) {
-  const url = `${API_BASE}${pathname}`;
-  for (let attempt = 1; ; attempt++) {
-    await nextSlot();
-    let res;
-    try {
-      res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    } catch (err) {
-      if (attempt >= 5) {
-        throw new Error(`network error after ${attempt} tries: ${err.cause?.code ?? err.message} (${url})`);
+// Rolling 60s window limiter, kept just under each host's documented limit.
+const makeLimiter = (ratePerMin) => {
+  const sentAt = [];
+  return async () => {
+    for (;;) {
+      const now = Date.now();
+      while (sentAt.length && now - sentAt[0] > 60_000) sentAt.shift();
+      if (sentAt.length < ratePerMin) {
+        sentAt.push(now);
+        return;
       }
-      await sleep(1000 * attempt);
-      continue;
+      await sleep(sentAt[0] + 60_000 - now + 20);
     }
-    // 429/5xx are transient (honor Retry-After; 1s otherwise). 4xx are NOT
-    // retried: they are deterministic.
-    if ((res.status === 429 || res.status >= 500) && attempt < 8) {
-      const header = res.headers.get("retry-after");
-      const sec = header === null ? 1 : Number(header);
-      await res.text().catch(() => {});
-      await sleep((Number.isFinite(sec) ? sec : 1) * 1000);
-      continue;
+  };
+};
+
+// One API client per host: shared concurrency budget, rolling-window rate
+// limit, retries for transient failures (429/5xx honoring Retry-After, up to
+// 8 attempts); deterministic 4xx are never retried.
+const makeApiGet = ({ base, token, ratePerMin, headers = {}, unauthorizedMessage }) => {
+  const nextSlot = makeLimiter(ratePerMin);
+  return async function apiGet(pathname, { allow404 = false } = {}) {
+    const url = `${base}${pathname}`;
+    for (let attempt = 1; ; attempt++) {
+      await nextSlot();
+      let res;
+      try {
+        res = await fetch(url, { headers: { ...headers, Authorization: `Bearer ${token}` } });
+      } catch (err) {
+        if (attempt >= 5) {
+          throw new Error(`network error after ${attempt} tries: ${err.cause?.code ?? err.message} (${url})`);
+        }
+        await sleep(1000 * attempt);
+        continue;
+      }
+      // 429/5xx are transient (honor Retry-After; 1s otherwise). 4xx are NOT
+      // retried: they are deterministic.
+      if ((res.status === 429 || res.status >= 500) && attempt < 8) {
+        const header = res.headers.get("retry-after");
+        const sec = header === null ? 1 : Number(header);
+        await res.text().catch(() => {});
+        await sleep((Number.isFinite(sec) ? sec : 1) * 1000);
+        continue;
+      }
+      if (res.status === 404 && allow404) {
+        await res.text().catch(() => {});
+        return null;
+      }
+      if (res.status === 401) throw new Error(unauthorizedMessage);
+      if (!res.ok) throw new Error(`HTTP ${res.status} ${pathname}`);
+      return res.json();
     }
-    if (res.status === 404 && allow404) {
-      await res.text().catch(() => {});
-      return null;
-    }
-    if (res.status === 401) {
-      throw new Error("HTTP 401 — VERCEL_OIDC_TOKEN missing/expired; re-run `vercel env pull`");
-    }
-    if (!res.ok) throw new Error(`HTTP ${res.status} ${pathname}`);
-    return res.json();
-  }
-}
+  };
+};
 
 // Ids are "owner/repo/slug" (github) or "domain/slug" (well-known), already
 // normalized to skills.sh's canonical form (slug slashes stripped, see
@@ -127,16 +140,23 @@ async function apiGet(pathname, token, { allow404 = false } = {}) {
 const encId = (id) => id.split("/").map(encodeURIComponent).join("/");
 const skillDir = (id) => path.join(OUT_DIR, "skills", dirName(id));
 
-async function fetchLeaderboard(token) {
+async function fetchLeaderboard(api) {
   const skills = [];
   const seen = new Set();
+  let nonGithub = 0;
   for (let page = 0; ; page++) {
-    const { data, pagination } = await apiGet(`/api/v1/skills?per_page=500&page=${page}`, token);
+    const { data, pagination } = await api(`/api/v1/skills?per_page=500&page=${page}`);
     // The leaderboard can drift while we paginate (entries shifting across
     // page boundaries), serving the same id twice; keep the first occurrence.
     // Ids are normalized to skills.sh's canonical form first, so a raw and a
     // canonical occurrence of the same skill collapse into one entry too.
+    // Only github-sourced skills are mirrored: well-known sources have no
+    // repository to attribute (and no stars to fetch).
     for (const skill of data ?? []) {
+      if (skill.sourceType !== "github") {
+        nonGithub++;
+        continue;
+      }
       const id = canonicalId(skill);
       if (!seen.has(id)) {
         seen.add(id);
@@ -144,7 +164,7 @@ async function fetchLeaderboard(token) {
       }
     }
     console.error(`  leaderboard: ${skills.length}/${pagination.total} (page ${page})`);
-    if (!pagination.hasMore || !data?.length) return skills;
+    if (!pagination.hasMore || !data?.length) return { skills, nonGithub };
   }
 }
 
@@ -168,14 +188,14 @@ async function loadPrevIndex() {
 // Content is fully re-downloaded and rewritten on every run. The previous row
 // only pins fetchedAt: while the upstream hash is unchanged, fetchedAt keeps
 // describing when that content version was first fetched.
-async function fetchSkill(skill, prev, token) {
+async function fetchSkill(skill, prev) {
   const dir = skillDir(skill.id);
   if (skill.isDuplicate) {
     await rm(dir, { recursive: true, force: true });
     return null;
   }
 
-  const detail = await apiGet(`/api/v1/skills/${encId(skill.id)}`, token);
+  const detail = await skillsApi(`/api/v1/skills/${encId(skill.id)}`);
   if (!Array.isArray(detail.files) || !detail.files.length) {
     return null; // no upstream snapshot; retried next run
   }
@@ -213,16 +233,20 @@ async function fetchSkill(skill, prev, token) {
   const unchanged = !!detail.hash && detail.hash === prev?.hash;
   // Only the fields not derivable elsewhere: the id encodes source and slug
   // (the directory layout mirrors it), the rest of the leaderboard payload
-  // (name, source, sourceType, installUrl) is redundant display data.
+  // (name, source, sourceType, installUrl) is redundant display data. Stars
+  // come from the per-repo fetch: the previous value covers a repo whose
+  // star request failed this run.
+  const repo = githubRepoOf(skill);
   const row = {
     id: skill.id,
     installs: skill.installs,
+    stars: repoStars.get(repo) ?? prev?.stars ?? null,
     url: skill.url,
     description: skillDescription(skillMd?.contents),
     hash: detail.hash ?? null,
     fetchedAt: unchanged && prev.fetchedAt ? prev.fetchedAt : new Date().toISOString(),
   };
-  await maybeAttachAudits(row, prev, unchanged, token);
+  await maybeAttachAudits(row, prev, unchanged);
   return row;
 }
 
@@ -230,13 +254,13 @@ async function fetchSkill(skill, prev, token) {
 // the skill's content changed (or on the first fetch); while the hash is
 // unchanged the previous results are reused without a request. A failed audit
 // request keeps the previous results; 404 = nobody audited the skill yet.
-async function maybeAttachAudits(row, prev, unchanged, token) {
+async function maybeAttachAudits(row, prev, unchanged) {
   if (!WANT_AUDITS) return;
   if (prev?.audits !== undefined && unchanged) {
     row.audits = prev.audits;
     return;
   }
-  const raw = await apiGet(`/api/v1/skills/audit/${encId(row.id)}`, token, { allow404: true }).catch((err) => {
+  const raw = await skillsApi(`/api/v1/skills/audit/${encId(row.id)}`, { allow404: true }).catch((err) => {
     console.error(`  WARN audits ${row.id}: ${err.message}`);
     return undefined;
   });
@@ -244,16 +268,65 @@ async function maybeAttachAudits(row, prev, unchanged, token) {
   else if (prev?.audits !== undefined) row.audits = prev.audits;
 }
 
-const token = await loadToken();
+const skillsToken = await loadEnvToken(
+  "VERCEL_OIDC_TOKEN",
+  "Get one with:  npm i -g vercel && vercel link && vercel env pull\n" +
+    "(the token lasts ~12h), or export VERCEL_OIDC_TOKEN yourself. See DEVELOPING.md.",
+);
+const githubToken = await loadEnvToken(
+  "GITHUB_TOKEN",
+  "Create one at https://github.com/settings/tokens (public repo read access is enough),\n" +
+    "then export GITHUB_TOKEN or add it to .env.local. In GitHub Actions the built-in\n" +
+    "secrets.GITHUB_TOKEN works. See DEVELOPING.md.",
+);
+const skillsApi = makeApiGet({
+  base: API_BASE,
+  token: skillsToken,
+  ratePerMin: 590, // skills.sh documents 600 req/min per (team, project)
+  unauthorizedMessage: "HTTP 401 — VERCEL_OIDC_TOKEN missing/expired; re-run `vercel env pull`",
+});
+const githubApi = makeApiGet({
+  base: GITHUB_API_BASE,
+  token: githubToken,
+  ratePerMin: 80, // GitHub REST: 5000 req/hr authenticated
+  headers: { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" },
+  unauthorizedMessage: "HTTP 401 — GITHUB_TOKEN missing/expired",
+});
 await rm(path.join(OUT_DIR, ".tmp"), { recursive: true, force: true });
 await mkdir(path.join(OUT_DIR, "skills"), { recursive: true });
 
-console.error(`[1/2] Fetching leaderboard from ${API_BASE} ...`);
-const skills = await fetchLeaderboard(token);
+console.error(`[1/3] Fetching leaderboard from ${API_BASE} ...`);
+const { skills, nonGithub } = await fetchLeaderboard(skillsApi);
 const prevIndex = await loadPrevIndex();
 
 const targets = Number.isFinite(DETAIL_LIMIT) ? skills.slice(0, DETAIL_LIMIT) : skills;
-console.error(`[2/2] Fetching content for ${targets.length} skills${WANT_AUDITS ? " + audits" : ""} ...`);
+
+// Stars are per repository, and skills cluster on shared repos: one request
+// per unique repo instead of per skill. A 404 (deleted/renamed-away repo)
+// pins stars to null; any other failure just skips the repo, and rows fall
+// back to the previous run's value (or null on first fetch).
+const repos = [...new Set(targets.map(githubRepoOf).filter(Boolean))];
+console.error(`[2/3] Fetching stars for ${repos.length} repositories from ${GITHUB_API_BASE} ...`);
+let reposDone = 0;
+let repoIndex = 0;
+const starWorker = async () => {
+  while (repoIndex < repos.length) {
+    const repo = repos[repoIndex++];
+    const data = await githubApi(`/repos/${repo.split("/").map(encodeURIComponent).join("/")}`, { allow404: true }).catch(
+      (err) => {
+        console.error(`  WARN stars ${repo}: ${err.message}`);
+        return undefined;
+      },
+    );
+    if (data !== undefined) repoStars.set(repo, data?.stargazers_count ?? null);
+    if (++reposDone % 200 === 0 || reposDone === repos.length) {
+      console.error(`  stars: ${reposDone}/${repos.length}`);
+    }
+  }
+};
+await Promise.all(Array.from({ length: Math.min(CONCURRENCY, repos.length) }, starWorker));
+
+console.error(`[3/3] Fetching content for ${targets.length} skills${WANT_AUDITS ? " + audits" : ""} ...`);
 
 const rows = [];
 let index = 0;
@@ -268,7 +341,7 @@ const worker = async () => {
     const skill = targets[index++];
     const prev = prevIndex.get(skill.id);
     try {
-      const row = await fetchSkill(skill, prev, token);
+      const row = await fetchSkill(skill, prev);
       if (row) {
         rows.push(row);
         // fetchedAt is re-stamped exactly when the content version changed
@@ -357,6 +430,8 @@ const stats = {
   limit: Number.isFinite(DETAIL_LIMIT) ? DETAIL_LIMIT : null,
   audits: WANT_AUDITS,
   leaderboardTotal: skills.length,
+  nonGithub,
+  githubRepos: repos.length,
   indexedRows: rows.length,
   changed,
   added,

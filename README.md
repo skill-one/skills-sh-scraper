@@ -1,6 +1,6 @@
 # skills.sh data mirror
 
-A daily snapshot of every skill on [skills.sh](https://www.skills.sh): the leaderboard as a queryable index (`skills.jsonl`) plus each skill's full files (`skills/`).
+A daily snapshot of every GitHub-sourced skill on [skills.sh](https://www.skills.sh): the leaderboard as a queryable index (`skills.jsonl`) plus each skill's full files (`skills/`). Skills from well-known (domain) sources are not mirrored — they have no repository to attribute.
 
 中文:[README.zh-CN.md](README.zh-CN.md) · Dev guide (run / verify / extend): [DEVELOPING.md](DEVELOPING.md)
 
@@ -10,7 +10,7 @@ A daily snapshot of every skill on [skills.sh](https://www.skills.sh): the leade
 ├── skills.jsonl   one row per skill, sorted by installs desc — query / filter / rank here
 ├── stats.json     the producing run's stats (counts, changes, failed ids)
 └── skills/        one directory per skill, named after its id
-    └── vercel-labs/skills/find-skills/   (GitHub: {owner}/{repo}/{slug} · well-known: {domain}/{slug})
+    └── vercel-labs/skills/find-skills/   ({owner}/{repo}/{slug})
         └── SKILL.md
 ```
 
@@ -20,6 +20,7 @@ Each `skills.jsonl` row:
 {
   "id": "vercel-labs/skills/find-skills",
   "installs": 3263512,
+  "stars": 1523,
   "url": "https://www.skills.sh/vercel-labs/skills/find-skills",
   "description": "Find and install skills for your agent from skills.sh",
   "hash": "b146008599c31057cef1c145774cea5d5afb30e8f43fa802e47a4b461419aaaf",
@@ -29,7 +30,8 @@ Each `skills.jsonl` row:
 
 | Field | Meaning |
 |---|---|
-| `id`, `installs`, `url` | from the skills.sh leaderboard (the id encodes source and slug) |
+| `id`, `installs`, `url` | from the skills.sh leaderboard (the id encodes source and slug: `{owner}/{repo}/{slug}`) |
+| `stars` | the GitHub repository's stargazer count (the id's first two segments); `null` if the repo is gone or the count is unknown |
 | `description` | from the skill's `SKILL.md` frontmatter; `null` if it has none |
 | `hash` | SHA-256 of the skill's files; `null` if unknown |
 | `fetchedAt` | when the current content version was first fetched |

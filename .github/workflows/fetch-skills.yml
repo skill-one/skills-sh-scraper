@@ -16,8 +16,8 @@ concurrency: skills-fetch
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    # Full scrape (~8.4k requests, 15-30 min).
-    timeout-minutes: 60
+    # Full scrape (~8.4k skills.sh requests + ~1.2k GitHub star requests, 30-45 min).
+    timeout-minutes: 90
 
     steps:
       - uses: actions/checkout@v4
@@ -60,6 +60,9 @@ jobs:
 
       - name: Scrape all skills
         run: node scraper.mjs
+        env:
+          # Built-in token for the per-repo star counts (GitHub REST, 5000 req/hr).
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # Layer 2: dataset invariants gate the publish.
       - name: Verify dataset

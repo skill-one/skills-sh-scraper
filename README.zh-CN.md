@@ -1,6 +1,6 @@
 # skills.sh 数据镜像
 
-[skills.sh](https://www.skills.sh) 全站技能的每日快照:排行榜以可查询的索引形式保存(`skills.jsonl`),同时附带每个技能的完整文件(`skills/`)。
+[skills.sh](https://www.skills.sh) 全站 GitHub 来源技能的每日快照:排行榜以可查询的索引形式保存(`skills.jsonl`),同时附带每个技能的完整文件(`skills/`)。well-known(域名)来源的技能不做镜像——它们没有可归属的仓库。
 
 English: [README.md](README.md) · 开发指南(运行 / 校验 / 扩展):[DEVELOPING.zh-CN.md](DEVELOPING.zh-CN.md)
 
@@ -10,7 +10,7 @@ English: [README.md](README.md) · 开发指南(运行 / 校验 / 扩展):[DEVEL
 ├── skills.jsonl   每个技能一行,按 installs 降序 —— 查询 / 筛选 / 排行在这里
 ├── stats.json     产出该快照那一次运行的统计(条目数、变化数、失败明细)
 └── skills/        每个技能一个目录,目录名即技能 id
-    └── vercel-labs/skills/find-skills/   (GitHub: {owner}/{repo}/{slug} · well-known: {domain}/{slug})
+    └── vercel-labs/skills/find-skills/   ({owner}/{repo}/{slug})
         └── SKILL.md
 ```
 
@@ -20,6 +20,7 @@ English: [README.md](README.md) · 开发指南(运行 / 校验 / 扩展):[DEVEL
 {
   "id": "vercel-labs/skills/find-skills",
   "installs": 3263512,
+  "stars": 1523,
   "url": "https://www.skills.sh/vercel-labs/skills/find-skills",
   "description": "Find and install skills for your agent from skills.sh",
   "hash": "b146008599c31057cef1c145774cea5d5afb30e8f43fa802e47a4b461419aaaf",
@@ -29,7 +30,8 @@ English: [README.md](README.md) · 开发指南(运行 / 校验 / 扩展):[DEVEL
 
 | 字段 | 含义 |
 |---|---|
-| `id`、`installs`、`url` | 来自 skills.sh 排行榜(id 已编码 source 和 slug) |
+| `id`、`installs`、`url` | 来自 skills.sh 排行榜(id 已编码 source 和 slug:`{owner}/{repo}/{slug}`) |
+| `stars` | 所在 GitHub 仓库的 star 数(id 的前两段即仓库);仓库已删除或未知时为 `null` |
 | `description` | 取自技能 `SKILL.md` 的 frontmatter;没有时为 `null` |
 | `hash` | 技能文件内容的 SHA-256;未知时为 `null` |
 | `fetchedAt` | 当前内容版本首次抓取的时间 |

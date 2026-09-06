@@ -4,7 +4,7 @@
  *
  * Checks skills.jsonl + content directories against the scraper's invariants:
  *   - every line parses; ids unique; rows sorted by installs desc (ties by id)
- *   - required fields well-formed (id, installs, url, fetchedAt, hash,
+ *   - required fields well-formed (id, installs, stars, url, fetchedAt, hash,
  *     audits, description)
  *   - no two rows share a sanitized directory name
  *   - description matches the SKILL.md frontmatter on disk
@@ -33,9 +33,13 @@ const problem = (msg) => problems.push(msg);
 function checkRow(row) {
   const id = row.id;
   const label = typeof id === "string" ? id : "(missing id)";
-  // Ids are source/slug (already canonical: the slug carries no "/").
-  if (typeof id !== "string" || id.split("/").filter((s) => s.length).length < 2) problem(`${label}: malformed id`);
+  // Github-sourced ids only: "owner/repo/slug" (already canonical — the slug
+  // carries no "/").
+  const segs = typeof id === "string" ? id.split("/").filter((s) => s.length) : [];
+  if (segs.length !== 3) problem(`${label}: malformed id`);
   if (!Number.isFinite(row.installs) || row.installs < 0) problem(`${label}: bad installs`);
+  if (row.stars !== null && (!Number.isFinite(row.stars) || row.stars < 0)) problem(`${label}: bad stars`);
+  if (!("stars" in row)) problem(`${label}: missing stars`);
   if (row.url !== null && typeof row.url !== "string") problem(`${label}: bad url`);
   if (row.fetchedAt !== null && !isIso(row.fetchedAt)) problem(`${label}: bad fetchedAt`);
   if (row.hash !== null && !isHash(row.hash)) problem(`${label}: bad hash`);
