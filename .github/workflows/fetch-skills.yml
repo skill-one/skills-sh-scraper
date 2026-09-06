@@ -112,5 +112,7 @@ jobs:
             git push -q origin ":refs/tags/$tag"
           done
           for tag in $kept; do
-            git push -q origin "refs/tags/$tag:refs/tags/$tag"
+            # "+" force: a day published twice re-points its existing tag at
+            # the newest snapshot, and a non-fast-forward tag update needs it.
+            git push -q origin "+refs/tags/$tag:refs/tags/$tag"
           done
