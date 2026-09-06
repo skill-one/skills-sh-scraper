@@ -100,13 +100,17 @@ jobs:
           fi
           git push -q --force origin dist
 
-          # Tag each retained snapshot as dist/<date> so consumers can pin a
-          # day without tracking the branch. Tags mirror the 5-commit window:
+          # Tag each retained snapshot as dist-<date> so consumers can pin a
+          # day without tracking the branch. The name is deliberately
+          # slash-free: raw.githubusercontent.com resolves dist/<date>/file
+          # as the dist branch plus a path (the shorter ref wins) and 404s,
+          # while dist-<date> is unambiguous and works in single-file raw
+          # URLs. Tags mirror the 5-commit window:
           # when prune re-roots the commits (which resets commit dates), the
           # date comes from the commit subject, and tags for days that fell
           # out of the window are deleted — otherwise they would keep the
           # pruned objects alive forever and grow the repo.
-          git fetch -q origin "+refs/tags/dist/*:refs/tags/dist/*" || true
+          git fetch -q origin "+refs/tags/dist-*:refs/tags/dist-*" || true
           kept=""
           n=$(git rev-list --count HEAD); [ "$n" -gt 5 ] && n=5
           # Oldest first, so when one day was published twice the newest
@@ -115,10 +119,10 @@ jobs:
             n=$((n - 1))
             sha=$(git rev-parse "HEAD~$n")
             day=$(git log -1 --format=%s "$sha"); day=${day##*— }
-            git tag -f "dist/$day" "$sha"
-            kept="$kept dist/$day"
+            git tag -f "dist-$day" "$sha"
+            kept="$kept dist-$day"
           done
-          for tag in $(git tag -l 'dist/*'); do
+          for tag in $(git tag -l 'dist-*'); do
             case " $kept " in *" $tag "*) continue ;; esac
             git tag -d "$tag"
             git push -q origin ":refs/tags/$tag"

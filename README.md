@@ -46,19 +46,32 @@ Edge cases (failed fetches, `--limit` runs, delisted skills) are covered in [DEV
 
 Published daily to the [`dist` branch](../../tree/dist) — each commit is a complete snapshot at the branch root.
 
-Latest snapshot:
+Most consumers only need a file or two, so fetch them straight from the branch — no clone, no auth:
+
+```bash
+# the index: one row per skill, sorted by installs — filter it to find ids
+curl -sO https://raw.githubusercontent.com/skill-one/skills-sh-scraper/dist/skills.jsonl
+
+# then any file of a skill, by its id: dist/skills/<id>/<filename>
+curl -sO https://raw.githubusercontent.com/skill-one/skills-sh-scraper/dist/skills/vercel-labs/skills/find-skills/SKILL.md
+```
+
+GitHub serves these with a ~5-minute cache, so the `dist` URLs always track the latest snapshot.
+
+Pinned to a day — each of the newest 5 snapshots is also tagged `dist-<date>`. The tag name is deliberately slash-free: `dist/<date>` in a raw URL is ambiguous with the `dist` branch and fails to resolve. Tags are immutable, so this is cache-friendly: cache by tag and re-fetch only when a newer day appears.
+
+```bash
+# resolve the newest available tag, then swap it into any URL above
+latest=$(git ls-remote --tags https://github.com/skill-one/skills-sh-scraper.git 'dist-*' \
+         | awk -F/ '{print $NF}' | sort -V | tail -1)
+curl -sO "https://raw.githubusercontent.com/skill-one/skills-sh-scraper/$latest/skills.jsonl"
+```
+
+Or clone the whole snapshot when you want everything or need it offline:
 
 ```bash
 git clone --depth 1 -b dist https://github.com/skill-one/skills-sh-scraper.git
-```
-
-Pinned to a day — each of the newest 5 snapshots is also tagged `dist/<date>`. Tags are immutable, so this is cache-friendly: cache by tag and re-fetch only when a newer day appears.
-
-```bash
-# resolve the newest available tag, then clone it
-latest=$(git ls-remote --tags https://github.com/skill-one/skills-sh-scraper.git 'dist/*' \
-         | awk -F/ '{print $NF}' | sort -V | tail -1)
-git clone --depth 1 -b "dist/$latest" https://github.com/skill-one/skills-sh-scraper.git
+# pinned to a day: git clone --depth 1 -b "$latest" https://github.com/skill-one/skills-sh-scraper.git
 ```
 
 Or produce it yourself: `node scraper.mjs` — see [DEVELOPING.md](DEVELOPING.md).

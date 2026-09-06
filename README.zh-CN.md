@@ -46,19 +46,32 @@ English: [README.md](README.md) · 开发指南(运行 / 校验 / 扩展):[DEVEL
 
 每日发布到 [`dist` 分支](../../tree/dist)——每个提交都是分支根目录下的完整快照。
 
-取最新快照:
+多数场景只需要一两个文件,直接按路径取即可——无需克隆、无需认证:
+
+```bash
+# 索引:每个技能一行,按 installs 降序——先过滤它找到目标 id
+curl -sO https://raw.githubusercontent.com/skill-one/skills-sh-scraper/dist/skills.jsonl
+
+# 再按 id 取技能的任意文件:dist/skills/<id>/<文件名>
+curl -sO https://raw.githubusercontent.com/skill-one/skills-sh-scraper/dist/skills/vercel-labs/skills/find-skills/SKILL.md
+```
+
+GitHub 对这些 URL 有约 5 分钟的缓存,因此 `dist` 路径始终跟随最新快照。
+
+固定取某一天——最近 5 个快照同时打上 `dist-<日期>` 标签。标签名刻意不含 `/`:raw URL 里的 `dist/<日期>` 会与 `dist` 分支产生歧义而无法解析。标签不可变,因此缓存友好:按标签缓存,只有出现更新的日期才需要重新拉取。
+
+```bash
+# 解析出最新的可用标签,替换到上面任意 URL 里
+latest=$(git ls-remote --tags https://github.com/skill-one/skills-sh-scraper.git 'dist-*' \
+         | awk -F/ '{print $NF}' | sort -V | tail -1)
+curl -sO "https://raw.githubusercontent.com/skill-one/skills-sh-scraper/$latest/skills.jsonl"
+```
+
+也可以克隆整份快照,适合需要全部数据或离线使用的场景:
 
 ```bash
 git clone --depth 1 -b dist https://github.com/skill-one/skills-sh-scraper.git
-```
-
-固定取某一天——最近 5 个快照同时打上 `dist/<日期>` 标签。标签不可变,因此缓存友好:按标签缓存,只有出现更新的日期才需要重新拉取。
-
-```bash
-# 解析出最新的可用标签,再克隆它
-latest=$(git ls-remote --tags https://github.com/skill-one/skills-sh-scraper.git 'dist/*' \
-         | awk -F/ '{print $NF}' | sort -V | tail -1)
-git clone --depth 1 -b "dist/$latest" https://github.com/skill-one/skills-sh-scraper.git
+# 固定到某天:git clone --depth 1 -b "$latest" https://github.com/skill-one/skills-sh-scraper.git
 ```
 
 也可以自己生成:`node scraper.mjs` —— 见 [DEVELOPING.zh-CN.md](DEVELOPING.zh-CN.md)。
