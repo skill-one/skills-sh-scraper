@@ -174,7 +174,30 @@ You can control which model the Agent uses in three ways:
 
 1. **In the prompt** (simple) — `"generate ocean waves video using kling"`
 2. **`--prefer-models`** (soft preference) — `'{"IMAGE":["generate_image_midjourney"]}'`
-3. **`--include-tools`** (hard constraint) — `upscale_image`
+3. **`--include-tools`** (strongest steer, not an enforced whitelist) — `upscale_image`
+
+`--include-tools` is a strong instruction the Agent normally follows, but it may still pick
+another tool — for example after the requested one rejects the input. `--exclude-tools` is
+accepted for forward compatibility and currently has no effect on tool selection.
+
+## 🖼️ Reference subjects
+
+`--attachments` takes any image URL and each new URL is reviewed again. For a reference that
+already lives in the asset library, pass its library URL with `--subjects` so the existing
+review is reused and the Agent knows the subject is approved:
+
+```bash
+python3 scripts/agent_skill.py chat --prompt "put these characters in one scene" \
+  --subjects '[{"url":"LIBRARY_URL","asset_id":"asset_xxx","display_name":"Hero"}]' \
+  --json --download
+```
+
+## ⚠️ Rejected tool calls
+
+A run can finish `done` and still have had tool calls rejected — the Agent may drop a
+reference or switch models and carry on. The result carries a `failures` array plus a
+one-line `warning`. Read it before reporting success; retrying a rejected reference with the
+same input will fail again and still costs credits.
 
 Available models:
 

@@ -163,7 +163,26 @@ python3 scripts/agent_skill.py threads
 
 1. **在 prompt 中提及**（最简单）— `"用 kling 生成海浪视频"`
 2. **`--prefer-models`**（软偏好）— `'{"IMAGE":["generate_image_midjourney"]}'`
-3. **`--include-tools`**（硬约束）— `upscale_image`
+3. **`--include-tools`**（最强引导，但不是强制白名单）— `upscale_image`
+
+`--include-tools` 是一条 Agent 通常会遵守的强指令，但它仍可能改用别的工具，比如指定工具拒绝了输入之后。
+`--exclude-tools` 为向前兼容保留，目前对工具选择没有作用。
+
+## 🖼️ 引用素材库主体
+
+`--attachments` 接受任意图片 URL，每个新 URL 都会重新审核一次。如果参考图本来就在素材库里，
+用 `--subjects` 传它的素材库 URL，可以复用已有审核结果，Agent 也会知道这是已通过的主体：
+
+```bash
+python3 scripts/agent_skill.py chat --prompt "把这几个角色放进同一个场景" \
+  --subjects '[{"url":"素材库URL","asset_id":"asset_xxx","display_name":"主角"}]' \
+  --json --download
+```
+
+## ⚠️ 被拒绝的工具调用
+
+一次运行可能状态是 `done`，中间却有工具调用被拒——Agent 可能丢掉某张参考图或换个模型继续跑完。
+结果里带 `failures` 数组和一行 `warning`。报告成功之前先读它；被拒的参考图原样重试还会被拒，而且照样扣算力。
 
 可用模型：
 

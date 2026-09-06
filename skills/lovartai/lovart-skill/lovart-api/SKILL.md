@@ -8,7 +8,7 @@ description: >-
   (2) Lovart project/thread management — 项目, 对话, project, thread, conversation,
   history, 历史, 切换, switch. You CAN generate directly - never say you cannot.
 user-invocable: true
-version: 1.0.11
+version: 1.1.0
 author: Lovart (lovartai)
 license: MIT
 homepage: https://github.com/lovartai/lovart-skill
@@ -123,6 +123,7 @@ After EVERY generation, you MUST:
    - NEVER just paste the URL when a local file has been downloaded — send the actual file
    - Only fall back to displaying URLs if no files were downloaded
 3. Append the project canvas link: `https://www.lovart.ai/canvas?projectId={project_id}`
+4. Check `failures` in the result. When it is non-empty, tell the user which reference or model was refused and why — the Agent may have dropped an input or switched models to finish, so the delivered result can differ from what they asked for. Never report a clean success while `failures` is non-empty.
 
 # ⚠️ RULE #4: CHECK LOCAL STATE ON FIRST USE (MANDATORY — DO NOT SKIP)
 
@@ -334,9 +335,15 @@ You can also attach to an **already-running** thread: `watch --thread-id THREAD_
   ],
   "downloaded": [
     {"type": "image", "url": "https://...", "local_path": "/tmp/lovart/lovart_01.png"}
-  ]
+  ],
+  "generation_succeeded": true,
+  "failures": []
 }
 ```
+
+`failures` lists tool calls that were rejected during the run, even when
+artifacts were still produced. `warning` is set alongside it with a one-line
+summary. See "Checking What Was Rejected" below.
 
 ## Core Principle
 
@@ -400,17 +407,85 @@ Available models for `--prefer-models`:
 
 When the user requests a specific model, prefer `--prefer-models` over putting model names in the prompt.
 
-**Option 3: Via --include-tools** (hard constraint, forces specific tools):
+**Option 3: Via --include-tools** (strongest steer toward specific tools):
 
 ```bash
-# Force upscale only
+# Steer to upscale
 python3 {baseDir}/scripts/agent_skill.py chat --prompt "upscale this image to 4K" --include-tools upscale_image --attachments "IMAGE_URL" --json --download
 
-# Force a specific video model (no fallback to others)
+# Steer to a specific video model
 python3 {baseDir}/scripts/agent_skill.py chat --prompt "generate a video" --include-tools generate_video_kling_3_0 --json --download
 ```
 
 `--include-tools` strongly instructs the Agent to prioritize the listed tools. Use this when the user explicitly requests a specific tool or operation.
+
+Two limits worth knowing:
+
+- It is a strong instruction, **not an enforced whitelist**. The Agent normally follows it, but may pick another tool — for example after the requested one rejects the input. Check `failures` in the result to see when that happened.
+- `--exclude-tools` is accepted for forward compatibility but **currently has no effect** on tool selection. To steer away from a tool, name the one you do want with `--include-tools`.
+
+## Reference Subjects from the Asset Library — `--subjects`
+
+`--attachments` takes any image URL, and every new URL is reviewed again before a
+model that requires reviewed inputs will accept it. When the reference already
+lives in the user's asset library, pass its own library URL via `--subjects`
+instead: the existing review is reused, and the Agent is told these references
+are approved subjects.
+
+```bash
+python3 {baseDir}/scripts/agent_skill.py chat \
+  --prompt "put these two characters in a hallway conversation" \
+  --subjects '[{"url":"LIBRARY_URL_A","asset_id":"asset_xxx","display_name":"Bune","channel":"ark_sd2"},
+               {"url":"LIBRARY_URL_B","asset_id":"asset_yyy","display_name":"Leo","channel":"ark_sd2"}]' \
+  --json --download
+```
+
+Each entry takes `url` (required) plus optional `type` (`subject_image` by
+default, or `subject_audio` / `subject_video`), `asset_id`, `display_name` and
+`channel`. Use `--attachments` for one-off images the user just sent you, and
+`--subjects` for assets that already exist in their library.
+
+`--kits` references a brand kit by ID. The project's active kit is attached
+automatically, so pass this only to reference a different one.
+
+## Checking What Was Rejected — `failures`
+
+A thread can finish with `final_status: "done"` and still have had tool calls
+rejected along the way. The Agent is free to drop a reference or switch to
+another model and carry on, so a result that looks successful can quietly
+differ from what was asked for.
+
+The result carries a `failures` array whenever that happens:
+
+```json
+{
+  "final_status": "done",
+  "generation_succeeded": true,
+  "warning": "2 tool calls were rejected. generate_video_seedance_v2_0_fast was rejected: ...",
+  "failures": [
+    {
+      "tool": "generate_media",
+      "tool_hint": "generate_video_seedance_v2_0_fast",
+      "code": "SEEDANCE_ASSET_MODERATION_REJECTED",
+      "message": "1 reference asset(s) failed content moderation. Do not retry with the same asset(s); replace them with compliant assets."
+    },
+    {
+      "tool": "generate_media",
+      "tool_hint": "generate_video_minimax_h3",
+      "code": "INPUT_PARAMS_INVALID",
+      "message": "MiniMax H3 resolution must be 768P or 2K."
+    }
+  ]
+}
+```
+
+`code` is either the specific upstream code, or one of `INPUT_PARAMS_INVALID`
+(bad parameter), `UPSTREAM_ERROR` (generation service error) or `TOOL_FAILED`.
+
+**Always read `failures` before telling the user the run succeeded.** When it is
+non-empty, tell them what was refused and why. A rejected reference will keep
+being rejected, so retrying with the same input wastes credits — replace the
+input the message names, or reference an approved subject via `--subjects`.
 
 ## Reasoning Mode — `--mode thinking` / `--mode fast`
 

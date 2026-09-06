@@ -163,7 +163,30 @@ Agent が使用するモデルを制御する 3 つの方法：
 
 1. **プロンプトで言及**（最もシンプル）— `"kling で波の動画を生成して"`
 2. **`--prefer-models`**（ソフトプリファレンス）— `'{"IMAGE":["generate_image_midjourney"]}'`
-3. **`--include-tools`**（ハードコンストレイント）— `upscale_image`
+3. **`--include-tools`**（最も強い誘導。強制ホワイトリストではない）— `upscale_image`
+
+`--include-tools` は Agent が通常従う強い指示ですが、指定したツールが入力を拒否した場合など、
+別のツールを選ぶことがあります。`--exclude-tools` は将来の互換性のために受け付けますが、
+現在はツール選択に影響しません。
+
+## 🖼️ アセットライブラリの被写体を参照する
+
+`--attachments` は任意の画像 URL を受け付け、新しい URL は毎回審査されます。参照がすでに
+アセットライブラリにある場合は `--subjects` でライブラリの URL を渡すと、既存の審査結果が
+再利用され、Agent もその被写体が承認済みだと分かります:
+
+```bash
+python3 scripts/agent_skill.py chat --prompt "このキャラクターを同じシーンに" \
+  --subjects '[{"url":"LIBRARY_URL","asset_id":"asset_xxx","display_name":"Hero"}]' \
+  --json --download
+```
+
+## ⚠️ 拒否されたツール呼び出し
+
+実行が `done` で終わっても、途中でツール呼び出しが拒否されていることがあります。Agent は参照を
+外したりモデルを切り替えたりして完了できるためです。結果には `failures` 配列と 1 行の `warning`
+が付きます。成功と報告する前に確認してください。拒否された参照は同じ入力で再試行しても再び拒否され、
+クレジットは消費されます。
 
 利用可能なモデル：
 
