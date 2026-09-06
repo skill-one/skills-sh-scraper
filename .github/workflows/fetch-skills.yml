@@ -74,7 +74,8 @@ jobs:
       # Data is published to the dist branch: one commit per day, history
       # pruned to the newest 5 commits, so the branch stays a bounded,
       # browsable archive of recent daily snapshots. The snapshot sits at the
-      # branch root: skills.jsonl, stats.json and skills/.
+      # branch root: skills.jsonl, trending.json, curated.json, stats.json
+      # and skills/.
       - name: Publish to dist branch
         run: |
           git config user.name "github-actions[bot]"
@@ -90,10 +91,10 @@ jobs:
           fi
           # Drop the retired layout (the snapshot used to live under data/).
           git rm -rq --ignore-unmatch data
-          rm -rf skills skills.jsonl stats.json
-          mv data-fresh/skills data-fresh/skills.jsonl data-fresh/stats.json .
+          rm -rf skills skills.jsonl trending.json curated.json stats.json
+          mv data-fresh/skills data-fresh/skills.jsonl data-fresh/trending.json data-fresh/curated.json data-fresh/stats.json .
           rm -rf data-fresh
-          git add -f skills skills.jsonl stats.json
+          git add -f skills skills.jsonl trending.json curated.json stats.json
           git commit -qm "skills.sh data — $(date -u +%F)"
 
           # Prune: re-root the newest 5 commits (no diff replay) when over.
