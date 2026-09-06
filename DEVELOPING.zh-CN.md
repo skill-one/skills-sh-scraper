@@ -32,7 +32,7 @@ vercel link && vercel env pull   # 将 VERCEL_OIDC_TOKEN 写入 .env.local,约 1
 echo 'GITHUB_TOKEN=ghp_…' >> .env.local   # 或自行 export GITHUB_TOKEN
 ```
 
-OIDC token 过期后(HTTP 401)重新执行 `vercel env pull` 即可。切勿提交 `.env.local`。在 GitHub Actions 中使用内置的 `secrets.GITHUB_TOKEN` 即可。
+OIDC token 过期后(HTTP 401)重新执行 `vercel env pull` 即可。切勿提交 `.env.local`。在 GitHub Actions 中,同一个 token 存为仓库 secret `GH_TOKEN` 并映射为同名环境变量 `GITHUB_TOKEN`(secret 名不允许以 `GITHUB_` 开头)——内置 `GITHUB_TOKEN` 限额为每仓库 1000 次/小时,不够约 1200 次 star 请求。
 
 ## 运行
 
@@ -69,4 +69,4 @@ npm run scrape && npm run verify  # 全量抓取 + 完整性校验
 ## CI
 
 - **`ci.yml`**(push / PR):层 1,跑在 Node 22 和 24 上。无需 secrets,fork 的 PR 也能运行。
-- **`fetch-skills.yml`**(每日 18:00 UTC + 手动):先把上一份 `dist` 快照还原进 `data/`——其 `skills.jsonl` 里的上游 hash 用来固定 `fetchedAt`、沿用未变化的审计结果、保留抓取失败技能的上一次内容,并让 `changed`/`added`/`removed` 计数描述的是本次运行而非空工作区——然后全量抓取作为每日金丝雀 → `verify.mjs` → 强制推送每日提交到 [`dist` 分支](README.zh-CN.md#数据在哪里),历史只保留最近 5 个,并为窗口内的每个快照打 `dist-<日期>` 标签(标签名不含 `/`,以便在 raw URL 中解析;窗口外的标签会一并删除,被裁掉的提交因此保持不可达)。工作流用长效 `VERCEL_TOKEN` 现场换取新鲜 OIDC token(所需 secrets:`VERCEL_TOKEN`、`VERCEL_ORG_ID`、`VERCEL_PROJECT_ID`——后两项在 `vercel link` 后从 `.vercel/project.json` 复制);抓 star 使用工作流内置的 `secrets.GITHUB_TOKEN`,无需额外配置。
+- **`fetch-skills.yml`**(每日 18:00 UTC + 手动):先把上一份 `dist` 快照还原进 `data/`——其 `skills.jsonl` 里的上游 hash 用来固定 `fetchedAt`、沿用未变化的审计结果、保留抓取失败技能的上一次内容,并让 `changed`/`added`/`removed` 计数描述的是本次运行而非空工作区——然后全量抓取作为每日金丝雀 → `verify.mjs` → 强制推送每日提交到 [`dist` 分支](README.zh-CN.md#数据在哪里),历史只保留最近 5 个,并为窗口内的每个快照打 `dist-<日期>` 标签(标签名不含 `/`,以便在 raw URL 中解析;窗口外的标签会一并删除,被裁掉的提交因此保持不可达)。工作流用长效 `VERCEL_TOKEN` 现场换取新鲜 OIDC token(所需 secrets:`VERCEL_TOKEN`、`VERCEL_ORG_ID`、`VERCEL_PROJECT_ID`——后两项在 `vercel link` 后从 `.vercel/project.json` 复制);抓 star 读取仓库 secret `GH_TOKEN`(个人访问 token,映射为环境变量 `GITHUB_TOKEN`——用 `gh secret set GH_TOKEN` 配置)。

@@ -33,7 +33,7 @@ vercel link && vercel env pull   # writes VERCEL_OIDC_TOKEN into .env.local, val
 echo 'GITHUB_TOKEN=ghp_…' >> .env.local   # or export GITHUB_TOKEN yourself
 ```
 
-Re-run `vercel env pull` when the OIDC token expires (HTTP 401). Never commit `.env.local`. In GitHub Actions the built-in `secrets.GITHUB_TOKEN` works.
+Re-run `vercel env pull` when the OIDC token expires (HTTP 401). Never commit `.env.local`. In GitHub Actions, the same token is stored as the repo secret `GH_TOKEN` and mapped to the same `GITHUB_TOKEN` env var (secret names may not start with `GITHUB_`) — the built-in `GITHUB_TOKEN` is capped at 1,000 req/hr per repository, too few for the ~1,200 star requests.
 
 ## Run
 
@@ -71,4 +71,4 @@ npm run scrape && npm run verify  # full scrape + integrity check
 ## CI
 
 - **`ci.yml`** (push / PR): layer 1 on Node 22 and 24. Secret-free, so fork PRs run too.
-- **`fetch-skills.yml`** (daily 18:00 UTC + manual): restores the previous `dist` snapshot into `data/` first — the upstream hashes in its `skills.jsonl` pin `fetchedAt`, reuse unchanged audit results, keep the last good content of failed fetches, and make the `changed`/`added`/`removed` counters describe the run instead of an empty workspace — then full scrape as a daily canary → `verify.mjs` → force-pushes a daily commit to the [`dist` branch](README.md#where-the-data-is), pruning history to the newest 5 and tagging each retained snapshot `dist-<date>` (slash-free so the tag resolves in raw URLs; tags outside the window are deleted, so pruned objects stay unreachable). It mints a fresh OIDC token from the long-lived `VERCEL_TOKEN` (required secrets: `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID` — the last two from `.vercel/project.json` after `vercel link`); star counts use the workflow's built-in `secrets.GITHUB_TOKEN`, no extra secret needed.
+- **`fetch-skills.yml`** (daily 18:00 UTC + manual): restores the previous `dist` snapshot into `data/` first — the upstream hashes in its `skills.jsonl` pin `fetchedAt`, reuse unchanged audit results, keep the last good content of failed fetches, and make the `changed`/`added`/`removed` counters describe the run instead of an empty workspace — then full scrape as a daily canary → `verify.mjs` → force-pushes a daily commit to the [`dist` branch](README.md#where-the-data-is), pruning history to the newest 5 and tagging each retained snapshot `dist-<date>` (slash-free so the tag resolves in raw URLs; tags outside the window are deleted, so pruned objects stay unreachable). It mints a fresh OIDC token from the long-lived `VERCEL_TOKEN` (required secrets: `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID` — the last two from `.vercel/project.json` after `vercel link`); star counts read the repo secret `GH_TOKEN` (a personal access token, mapped to the `GITHUB_TOKEN` env var — set it with `gh secret set GH_TOKEN`).

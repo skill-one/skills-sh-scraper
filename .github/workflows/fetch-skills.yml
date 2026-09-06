@@ -61,8 +61,11 @@ jobs:
       - name: Scrape all skills
         run: node scraper.mjs
         env:
-          # Built-in token for the per-repo star counts (GitHub REST, 5000 req/hr).
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The built-in GITHUB_TOKEN is capped at 1,000 req/hr per repository —
+          # the star phase needs ~1.2k. GH_TOKEN is a repo secret holding the
+          # same kind of PAT used locally, mapped to the GITHUB_TOKEN env var
+          # the scraper reads (secret names may not start with GITHUB_).
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
       # Layer 2: dataset invariants gate the publish.
       - name: Verify dataset
