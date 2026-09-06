@@ -1,0 +1,4 @@
+interface:
+  display_name: "Moshi Best Practices"
+  short_description: "Prepare or verify a host for Moshi."
+  default_prompt: "Use $moshi-best-practices to prepare or verify a host for Moshi, prefer Herdr (tmux as fallback), create a project multiplexer session, and set up moshi-hook."

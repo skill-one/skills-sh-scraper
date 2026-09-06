@@ -1,0 +1,171 @@
+# Sunsama MCP Routing Reference
+
+> **Safety:** All write operations (POST, PUT, PATCH, DELETE) require explicit user confirmation before execution. Verify the target resource and intended effect with the user first. See the main [SKILL.md](../SKILL.md#security--permissions) for full security policy.
+
+**App name:** `sunsama`
+**Base URL proxied:** MCP server
+
+## Connection Management
+
+An MCP connection is created like any other, with `--method MCP`.
+
+### List Connections
+
+```bash
+maton connection list sunsama --method MCP --status ACTIVE
+```
+
+### Create Connection
+
+```bash
+maton connection create sunsama --method MCP
+```
+
+## API Path Pattern
+
+```
+/sunsama/{tool-name}
+```
+
+## MCP Reference
+
+All MCP tools use `POST` method:
+
+| Tool | Description | Schema |
+|------|-------------|--------|
+| `search_tasks` | Search tasks by keyword | [schema](schemas/search_tasks.json) |
+| `create_task` | Create a new task | [schema](schemas/create_task.json) |
+| `edit_task_title` | Update task title | [schema](schemas/edit_task_title.json) |
+| `delete_task` | Delete a task | [schema](schemas/delete_task.json) |
+| `mark_task_as_completed` | Mark task complete | [schema](schemas/mark_task_as_completed.json) |
+| `mark_task_as_incomplete` | Mark task incomplete | [schema](schemas/mark_task_as_incomplete.json) |
+| `append_task_notes` | Add notes to task | [schema](schemas/append_task_notes.json) |
+| `edit_task_time_estimate` | Set time estimate | [schema](schemas/edit_task_time_estimate.json) |
+| `add_subtasks_to_task` | Add subtasks | [schema](schemas/add_subtasks_to_task.json) |
+| `get_backlog_tasks` | List backlog tasks | [schema](schemas/get_backlog_tasks.json) |
+| `move_task_to_backlog` | Move task to backlog | [schema](schemas/move_task_to_backlog.json) |
+| `move_task_from_backlog` | Move from backlog to day | [schema](schemas/move_task_from_backlog.json) |
+| `move_task_to_day` | Reschedule task | [schema](schemas/move_task_to_day.json) |
+| `create_calendar_event` | Create calendar event | [schema](schemas/create_calendar_event.json) |
+| `timebox_a_task_to_calendar` | Block time for task | [schema](schemas/timebox_a_task_to_calendar.json) |
+| `start_task_timer` | Start timer | [schema](schemas/start_task_timer.json) |
+| `stop_task_timer` | Stop timer | [schema](schemas/stop_task_timer.json) |
+| `create_weekly_objective` | Create weekly goal | [schema](schemas/create_weekly_objective.json) |
+| `create_braindump_task` | Create backlog task | [schema](schemas/create_braindump_task.json) |
+| `create_channel` | Create channel/context | [schema](schemas/create_channel.json) |
+| `accept_meeting_invite` | RSVP yes to a meeting — **visible to organizer and attendees, confirm first** | [schema](schemas/accept_meeting_invite.json) |
+| `decline_meeting_invite` | RSVP no to a meeting — **visible to organizer and attendees, confirm first** | [schema](schemas/decline_meeting_invite.json) |
+| `log_user_feedback` | Send feedback to Sunsama — **retained externally, confirm wording** | [schema](schemas/log_user_feedback.json) |
+
+## Common Endpoints
+
+### Search Tasks
+
+```bash
+maton api -X POST '/sunsama/search_tasks' \
+  -H 'Content-Type: application/json' \
+  --input - <<'EOF'
+{
+  "searchTerm": "meeting"
+}
+EOF
+```
+
+### Create Task
+
+```bash
+maton api -X POST '/sunsama/create_task' \
+  -H 'Content-Type: application/json' \
+  --input - <<'EOF'
+{
+  "title": "Review quarterly report",
+  "day": "2026-03-03",
+  "alreadyInTaskList": false
+}
+EOF
+```
+
+**Response:**
+```json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"success\":true,\"task\":{\"_id\":\"69a6bf3a04d3cd0001595308\",\"title\":\"Review quarterly report\",\"scheduledDate\":\"2026-03-03\",\"completed\":false}}"
+    }
+  ],
+  "isError": false
+}
+```
+
+### Get Backlog Tasks
+
+```bash
+maton api -X POST '/sunsama/get_backlog_tasks' \
+  -H 'Content-Type: application/json' \
+  --input - <<'EOF'
+{}
+EOF
+```
+
+### Mark Task as Completed
+
+```bash
+maton api -X POST '/sunsama/mark_task_as_completed' \
+  -H 'Content-Type: application/json' \
+  --input - <<'EOF'
+{
+  "taskId": "69a6bf3a04d3cd0001595308",
+  "finishedDay": "2026-03-03"
+}
+EOF
+```
+
+### Create Braindump Task
+
+```bash
+maton api -X POST '/sunsama/create_braindump_task' \
+  -H 'Content-Type: application/json' \
+  --input - <<'EOF'
+{
+  "title": "Research new tools",
+  "timeBucket": "in the next month"
+}
+EOF
+```
+
+**Time bucket options:**
+- `"in the next two weeks"`
+- `"in the next month"`
+- `"in the next quarter"`
+- `"in the next year"`
+- `"someday"`
+- `"never"`
+
+### Timebox Task to Calendar
+
+```bash
+maton api -X POST '/sunsama/timebox_a_task_to_calendar' \
+  -H 'Content-Type: application/json' \
+  --input - <<'EOF'
+{
+  "taskId": "69a6bf3a04d3cd0001595308",
+  "startDate": "2026-03-03",
+  "startTime": "14:00"
+}
+EOF
+```
+
+## Notes
+
+- All task IDs are MongoDB ObjectIds (24-character hex strings)
+- Date format: `YYYY-MM-DD` for days, ISO 8601 for datetimes
+- MCP tool responses wrap content in `{"content": [{"type": "text", "text": "..."}], "isError": false}` format
+- The `text` field contains JSON-stringified data that should be parsed
+- If multiple Sunsama connections exist, specify which to use with `Maton-Connection` header
+
+## Resources
+
+- [Sunsama](https://sunsama.com)
+- [Maton Community](https://discord.com/invite/dBfFAcefs2)
+- [Maton Support](mailto:support@maton.ai)

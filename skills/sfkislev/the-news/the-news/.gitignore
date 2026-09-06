@@ -1,0 +1,6 @@
+automation/
+
+# Secrets
+.env
+.env.*
+!.env.example

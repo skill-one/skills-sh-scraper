@@ -1,0 +1,319 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/lovart-icon.svg" />
+    <source media="(prefers-color-scheme: light)" srcset="assets/lovart-icon-dark.svg" />
+    <img src="assets/lovart-icon-dark.svg" width="96" height="96" alt="Lovart" />
+  </picture><br/>
+  <strong>lovart-skill</strong><br/><br/>
+  <a href="https://github.com/lovartai/lovart-skill/releases"><img src="https://img.shields.io/github/v/release/lovartai/lovart-skill" alt="Release" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
+  <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.6+-green.svg" alt="Python 3.6+" /></a><br/>
+  <strong>English</strong> | <a href="README_CN.md">简体中文</a> | <a href="README_TW.md">繁體中文</a> | <a href="README_JA.md">日本語</a>
+</p>
+<br/>
+
+> Lovart AI Agent Skills — generate images, video, and audio from any
+> AI coding assistant. One `SKILL.md`, two install paths.
+
+## ✨ What it does
+
+This skill connects your AI coding assistant to Lovart's Agent OpenAPI.
+It works with both the [OpenClaw](https://openclaw.com) and [Hermes Agent](https://github.com/l3ad3r1/Hermes-skills) ecosystems out of the box, and also runs from any assistant that can invoke Python scripts. Capabilities:
+
+- 🖼️ **Image generation** — posters, logos, illustrations, banners, mockups, etc.
+- 🎬 **Video generation** — clips, animations, product videos
+- 🎵 **Audio generation** — BGM, songs, sound effects
+- ✂️ **Image/video editing** — upscale, reframe, style transfer
+- 🧊 **3D generation** — 3D models from text or images
+- 📁 **Project & thread management** — multi-project support with local state persistence
+
+## 📦 Install
+
+Choose the path that matches your agent ecosystem. **OpenClaw is the
+officially published distribution** (`npx skills add` pulls the
+latest release from ClawHub); **Hermes Agent is a manual install**
+you copy into your skills tree. Both paths install the same skill
+files; the difference is only in how the agent discovers and invokes
+them.
+
+Set your credentials once either way — they are the same in both
+ecosystems:
+
+```bash
+export LOVART_ACCESS_KEY="ak_xxx"
+export LOVART_SECRET_KEY="sk_xxx"
+```
+
+Get your AK/SK from the Lovart platform (Avatar menu -> AK/SK Management).
+
+### OpenClaw
+
+```bash
+npx skills add lovartai/lovart-skill
+```
+
+Pulls the latest published release from ClawHub. OpenClaw installs
+the skill into your project and auto-discovers it through its
+`metadata.openclaw` block.
+
+### Hermes Agent
+
+Hermes Agent discovers skills from `~/.hermes/skills/<category>/<skill-name>/SKILL.md`.
+This is a **manual / community install** — there is no automated
+publish target in this repo yet.
+
+```bash
+git clone https://github.com/lovartai/lovart-skill.git
+cd lovart-skill
+cp -r skills/lovart-skill ~/.hermes/skills/design/lovart-api
+```
+
+Hermes auto-triggers on any visual / audio creation request through
+its `metadata.hermes.tags` block. From your Hermes chat:
+
+```
+/lovart-api draw a cyberpunk cat in neon city
+```
+
+> 💡 The two paths install identical skill files — the `SKILL.md`
+> ships dual-format frontmatter, so the same artifact serves both
+> ecosystems without modification.
+
+## 🚀 Quick start
+
+```bash
+# Generate an image
+python3 scripts/agent_skill.py chat --prompt "a cyberpunk cat in neon city" --json --download
+
+# Generate a video
+python3 scripts/agent_skill.py chat --prompt "ocean waves crashing on rocks, cinematic" --json --download
+
+# Generate BGM
+python3 scripts/agent_skill.py chat --prompt "lofi hip-hop, chill, study vibes" --json --download
+```
+
+## 🛠️ Commands
+
+### Generation
+
+| Command | Description |
+|---------|-------------|
+| `chat` | Send prompt, wait for completion, return all results at once. Main command. |
+| `watch` | Send prompt and stream artifacts as they complete (NDJSON, incremental delivery) |
+| `send` | Send prompt without waiting (returns thread_id immediately) |
+| `confirm` | Confirm a pending high-cost operation (e.g. video), then wait |
+| `result` | Get results for a thread |
+| `status` | Check thread status |
+
+### Project management
+
+| Command | Description |
+|---------|-------------|
+| `projects` | List all projects |
+| `project-add` | Add and switch to a project |
+| `project-switch` | Switch active project (supports prefix match) |
+| `project-rename` | Rename a project |
+| `project-remove` | Remove a project and its threads |
+| `create-project` | Create a new empty project on the server |
+
+### Configuration
+
+| Command | Description |
+|---------|-------------|
+| `config` | View/update local settings (`~/.lovart/state.json`) |
+| `threads` | List saved conversation threads |
+| `set-mode` | Switch between fast (credits) / unlimited (queue) mode |
+| `query-mode` | Check current generation mode |
+
+### File operations
+
+| Command | Description |
+|---------|-------------|
+| `upload` | Upload a local file to CDN (returns URL) |
+| `upload-artifact` | Upload a URL artifact to a project |
+| `download` | Download artifacts from URLs |
+
+## 💡 Usage examples
+
+```bash
+# Use an existing project
+python3 scripts/agent_skill.py chat --project-id PROJECT_ID --prompt "draw a cat" --json --download
+
+# Continue a conversation (thread reuse preserves context)
+python3 scripts/agent_skill.py chat --thread-id THREAD_ID --prompt "make it blue" --json --download
+
+# Stream artifacts as they complete (NDJSON, for multi-image/video requests)
+python3 scripts/agent_skill.py watch --prompt "generate 4 variations of a cyberpunk cat"
+
+# Edit with reference image
+python3 scripts/agent_skill.py upload --file photo.jpg
+python3 scripts/agent_skill.py chat --prompt "change the style to watercolor" --attachments "CDN_URL" --json --download
+
+# Prefer a specific model
+python3 scripts/agent_skill.py chat --prompt "draw a cat" \
+  --prefer-models '{"IMAGE":["generate_image_midjourney"]}' --json --download
+
+# Force a specific tool (e.g. upscale instead of re-generate)
+python3 scripts/agent_skill.py chat --prompt "upscale this image" \
+  --include-tools upscale_image --attachments "IMAGE_URL" --json --download
+
+# Thinking mode — deep structured reasoning for complex requests
+python3 scripts/agent_skill.py chat --prompt "design a brand identity for a coffee startup" \
+  --mode thinking --json --download
+
+# Project management
+python3 scripts/agent_skill.py projects
+python3 scripts/agent_skill.py project-add --project-id NEW_ID --name "My Brand Kit"
+python3 scripts/agent_skill.py project-switch --project-id NEW_ID
+python3 scripts/agent_skill.py threads
+```
+
+## 🎯 Model selection
+
+You can control which model the Agent uses in three ways:
+
+1. **In the prompt** (simple) — `"generate ocean waves video using kling"`
+2. **`--prefer-models`** (soft preference) — `'{"IMAGE":["generate_image_midjourney"]}'`
+3. **`--include-tools`** (hard constraint) — `upscale_image`
+
+Available models:
+
+<!-- AUTOGEN:models:start -->
+<!-- AUTOGEN:models:end -->
+
+## 🧠 Reasoning modes
+
+Control how the agent thinks per request via `--mode`:
+
+- **`fast`** (default) — lightweight single-pass response. Faster, cheaper, suitable for simple one-shot generations.
+- **`thinking`** — deep structured reasoning with planning and multi-step analysis. Use for complex brand systems, multi-asset campaigns, anything that benefits from deliberate planning. Slower but higher quality.
+
+```bash
+# Quick, single-shot (default)
+python3 scripts/agent_skill.py chat --prompt "draw a cat"
+
+# Deliberate, plan-first reasoning
+python3 scripts/agent_skill.py chat --prompt "design a full brand identity" --mode thinking
+```
+
+**Mode is locked to the thread on its first message.** To switch modes, start a new thread (omit `--thread-id`). Mirrors the Lovart web UI toggle.
+
+## ⚡ Billing modes
+
+Separate from reasoning mode. This is a persistent account-level billing setting:
+
+```bash
+# Fast — costs credits, no queue
+python3 scripts/agent_skill.py set-mode --fast
+
+# Unlimited — free, may queue
+python3 scripts/agent_skill.py set-mode --unlimited
+
+# Check current
+python3 scripts/agent_skill.py query-mode
+```
+
+## 🚦 Rate limits
+
+The API enforces per-account request frequency limits, split into two tiers based on the endpoint you hit:
+
+| Tier | Endpoints | Per minute | Per hour |
+|------|-----------|-----------|---------|
+| **Chat** (write) | `/chat`, `/chat/confirm` | 60 | 600 |
+| **Query** (read) | `/chat/status`, `/chat/result`, `/project/*`, `/mode/*`, everything else | 300 | 3000 |
+
+The stricter `Chat` tier protects generation. The `Query` tier is much looser so polling for status/results doesn't eat into your generation budget.
+
+Exceeding a limit returns `HTTP 429` with `Retry-After: 60`.
+
+This is separate from **generation concurrency** — each thread can only run one generation task at a time. If a task is already running in a thread, new requests to that thread are rejected with `HTTP 409` until it finishes. You can run tasks in different threads concurrently.
+
+The skill auto-retries on transient network errors (3 attempts with backoff), but rate limit and billing errors are returned immediately.
+
+## 💾 Local state
+
+Settings and thread history are persisted at `~/.lovart/state.json`:
+
+```json
+{
+  "active_project": "abc123...",
+  "projects": {
+    "abc123...": {"name": "My Project", "created_at": "..."}
+  },
+  "threads": [
+    {"id": "xxx", "project_id": "abc123...", "topic": "cyberpunk cat", "updated_at": "..."}
+  ]
+}
+```
+
+## 🤖 Integration
+
+The skill works with multiple agent ecosystems. Pick the one that
+matches yours.
+
+### OpenClaw
+
+```bash
+npx skills add lovartai/lovart-skill
+```
+
+OpenClaw reads `metadata.openclaw` from `SKILL.md` and auto-discovers
+the skill after install — no extra configuration beyond the env vars.
+
+### Hermes Agent
+
+Drop the skill into `~/.hermes/skills/<category>/<skill-name>/` (see
+the Hermes subsection under `Install` above). Hermes reads
+`metadata.hermes` and routes visual / audio creation requests to the
+skill via its `/lovart-api` slash command.
+
+### Other AI assistants
+
+The skill also works with Claude Code, Cursor, and any assistant that
+can invoke Python scripts directly. See `SKILL.md` for the full
+integration contract.
+
+## 📁 Project structure
+
+```
+lovart-skill/
+├── README.md
+├── README_CN.md
+├── README_TW.md
+├── README_JA.md
+└── skills/
+    └── lovart-skill/
+        ├── SKILL.md                 # Skill contract (dual-format: OpenClaw + Hermes)
+        └── scripts/
+            └── agent_skill.py       # Python client (zero dependencies)
+```
+
+## 🔒 Security & privacy
+
+- **Local state file**: The skill reads/writes `~/.lovart/state.json` to persist your active project and recent thread IDs. No other files are accessed.
+- **Outbound calls**: Only talks to the Lovart API (`https://lgw.lovart.ai`) and Lovart CDN (for downloading your own generated artifacts). No third-party services.
+- **API keys**: AK/SK are read from env vars (`LOVART_ACCESS_KEY` / `LOVART_SECRET_KEY`) and signed with HMAC-SHA256 per request. Keys are never logged or persisted to disk.
+- **TLS**: SSL certificate verification is **enabled by default**. Set `LOVART_INSECURE_SSL=1` to disable (only if you're behind a corporate proxy/VPN that intercepts TLS).
+- **Source code**: `skills/lovart-skill/scripts/agent_skill.py` is ~900 lines of pure Python standard library — you're encouraged to read it before installing.
+
+## 🏗️ Architecture
+
+```
+OpenClaw / Hermes Agent / Claude Code / other AI assistant
+  -> scripts/agent_skill.py (this skill)
+    -> Lovart OpenAPI (AK/SK HMAC-SHA256 auth)
+      -> Lovart AI Agent (model selection, orchestration)
+        -> Generated images / videos / audio
+```
+
+## 🤝 Contributing
+
+Contributions are welcome! Feel free to:
+
+- [Open an issue](https://github.com/lovartai/lovart-skill/issues) to report bugs or suggest features
+- [Submit a pull request](https://github.com/lovartai/lovart-skill/pulls) to fix issues or add improvements
+
+
+## 📄 License
+
+[MIT](LICENSE)

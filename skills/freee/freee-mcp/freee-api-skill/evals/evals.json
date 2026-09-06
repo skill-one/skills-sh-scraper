@@ -1,0 +1,217 @@
+{
+  "skill_name": "freee-api-skill",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "今月の経費申請を一覧で見せて\n\n注意: これはドライランです。実際にMCPツールは呼び出さず、どのツールをどのパラメータで呼び出すべきかを手順として説明してください。レシピやリファレンスの参照は実際に行ってください。",
+      "expected_output": "recipes/expense-application-operations.md を参照した上で、freee_get_current_company → freee_api_get (service=accounting, path=/api/1/expense_applications) の手順を説明する。",
+      "assertions": [
+        "freee_get_current_company を最初に呼び出す手順を説明している",
+        "recipes/expense-application-operations.md を実際に参照している",
+        "freee_api_get を service=accounting、path=/api/1/expense_applications で呼び出す計画を示している",
+        "company_id パラメータが必要であることに言及している",
+        "MCPツール（freee_api_get 等）を実際には呼び出していない"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "先月の売上を勘定科目別に教えて\n\n注意: これはドライランです。実際にMCPツールは呼び出さず、どのツールをどのパラメータで呼び出すべきかを手順として説明してください。レシピやリファレンスの参照は実際に行ってください。",
+      "expected_output": "references/ から試算表のリファレンスを検索・参照し、freee_get_current_company → freee_api_get (試算表API) の手順を説明する。",
+      "assertions": [
+        "freee_get_current_company を最初に呼び出す手順を説明している",
+        "references/ 内のリファレンスを実際に検索・参照している",
+        "試算表関連のAPIパス（/api/1/reports/trial_pl 等）を使用する計画を示している",
+        "未承認仕訳（approval_flow_status）についてユーザーに確認する手順を含んでいる",
+        "期間パラメータ（start_date, end_date 等）に先月の日付を指定する計画を示している",
+        "MCPツール（freee_api_get 等）を実際には呼び出していない"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "freee に出勤を打刻して\n\n注意: これはドライランです。実際にMCPツールは呼び出さず、どのツールをどのパラメータで呼び出すべきかを手順として説明してください。レシピやリファレンスの参照は実際に行ってください。",
+      "expected_output": "recipes/hr-attendance-operations.md を参照した上で、freee_get_current_company → freee_api_post (service=hr, 打刻API) の手順を説明する。",
+      "assertions": [
+        "freee_get_current_company を最初に呼び出す手順を説明している",
+        "recipes/ または references/ 内の勤怠関連ファイルを実際に参照している",
+        "freee_api_post を service=hr で呼び出す計画を示している",
+        "打刻タイプとして clock_in（出勤）を指定する計画を示している",
+        "従業員IDの取得手順（/api/v1/users/me 等）を説明している",
+        "打刻可能種別の事前確認（available_types）に言及している",
+        "MCPツール（freee_api_post 等）を実際には呼び出していない"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "取引先「テスト株式会社」に対して、税込11,000円の支出取引を登録したい。勘定科目は消耗品費で。\n\n注意: これはドライランです。実際にMCPツールは呼び出さず、どのツールをどのパラメータで呼び出すべきかを手順として説明してください。レシピやリファレンスの参照は実際に行ってください。",
+      "expected_output": "recipes/deal-operations.md を参照し、freee_get_current_company → 取引先検索 → 勘定科目検索 → freee_api_post (path=/api/1/deals, type=expense) の手順を説明する。",
+      "assertions": [
+        "freee_get_current_company を最初に呼び出す手順を説明している",
+        "recipes/deal-operations.md を実際に参照している",
+        "取引先を検索するAPI（/api/1/partners 等）を呼び出す手順を説明している",
+        "勘定科目を検索するAPI（/api/1/account_items 等）を呼び出す手順を説明している",
+        "freee_api_post を service=accounting、path=/api/1/deals で呼び出す計画を示している",
+        "type を expense（支出）に設定する計画を示している",
+        "MCPツール（freee_api_post 等）を実際には呼び出していない"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "請求書を新しく作りたいんだけど、どうすればいい？\n\n注意: これはドライランです。実際にMCPツールは呼び出さず、どのツールをどのパラメータで呼び出すべきかを手順として説明してください。レシピやリファレンスの参照は実際に行ってください。",
+      "expected_output": "recipes/invoice-operations.md を参照し、請求書作成の手順とパラメータを説明する。必要な情報（取引先、品目、金額等）をユーザーに確認する。",
+      "assertions": [
+        "recipes/invoice-operations.md を実際に参照している",
+        "請求書作成に必要なパラメータや手順を説明している",
+        "請求書APIのパスとして /invoices（invoice サービス）を使用する計画を示している（会計APIの /api/1/invoices ではない）",
+        "必要な情報をユーザーに確認している（取引先、品目、金額など）",
+        "いきなりAPIを呼ぶ計画ではなく、まず情報を整理している",
+        "MCPツールを実際には呼び出していない"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "従業員の一覧を取得して\n\n注意: これはドライランです。実際にMCPツールは呼び出さず、どのツールをどのパラメータで呼び出すべきかを手順として説明してください。レシピやリファレンスの参照は実際に行ってください。",
+      "expected_output": "freee_get_current_company → freee_api_get (service=hr, path=/api/v1/employees) の手順を説明する。",
+      "assertions": [
+        "freee_get_current_company を最初に呼び出す手順を説明している",
+        "freee_api_get を service=hr で呼び出す計画を示している",
+        "従業員一覧のAPIパス（/api/v1/employees）を使用する計画を示している",
+        "company_id パラメータが必要であることに言及している",
+        "MCPツール（freee_api_get 等）を実際には呼び出していない"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "今月のプロジェクト別の工数実績を確認したい\n\n注意: これはドライランです。実際にMCPツールは呼び出さず、どのツールをどのパラメータで呼び出すべきかを手順として説明してください。レシピやリファレンスの参照は実際に行ってください。",
+      "expected_output": "recipes/pm-operations.md を参照した上で、freee_get_current_company → freee_api_get (service=pm) の手順を説明する。",
+      "assertions": [
+        "freee_get_current_company を最初に呼び出す手順を説明している",
+        "recipes/pm-operations.md を実際に参照している",
+        "freee_api_get を service=pm で呼び出す計画を示している",
+        "期間を今月に絞るパラメータを指定する計画を示している",
+        "MCPツール（freee_api_get 等）を実際には呼び出していない"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "freee で使えるAPIの一覧を教えて\n\n注意: これはドライランです。実際にMCPツールは呼び出さず、どのツールをどのパラメータで呼び出すべきかを手順として説明してください。レシピやリファレンスの参照は実際に行ってください。",
+      "expected_output": "freee_api_list_paths を呼び出す計画を示し、10個のサービス（会計・人事労務・請求書・工数管理・販売・IT管理・固定資産・業務委託管理・サーベイ・申告）について説明する。",
+      "assertions": [
+        "freee_api_list_paths ツールを呼び出す計画を示している",
+        "会計・人事労務・請求書・工数管理・販売・IT管理・固定資産・業務委託管理・サーベイ・申告の各サービスについて言及している",
+        "各サービスの service パラメータ値（accounting, hr, invoice, pm, sm, it_management, fixed_asset_management, partner_management, survey, tax_return）を正確に示している",
+        "各サービスのパス体系の違い（/api/1/ vs /api/v1/ vs /invoices vs /hub/it_management/ vs /hub/fixed_asset_management/ vs /hub/partner_management/ vs /hub/survey/ vs /hub/tax_return/ 等）に言及している",
+        "MCPツール（freee_api_list_paths 等）を実際には呼び出していない"
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "振替伝票で、普通預金から現金に50,000円を振り替えたい\n\n注意: これはドライランです。実際にMCPツールは呼び出さず、どのツールをどのパラメータで呼び出すべきかを手順として説明してください。レシピやリファレンスの参照は実際に行ってください。",
+      "expected_output": "recipes/manual-journal-operations.md を参照し、freee_get_current_company → freee_api_post (path=/api/1/manual_journals) の手順を説明する。借方: 現金、貸方: 普通預金。",
+      "assertions": [
+        "freee_get_current_company を最初に呼び出す手順を説明している",
+        "recipes/manual-journal-operations.md を実際に参照している",
+        "freee_api_post を service=accounting、path=/api/1/manual_journals で呼び出す計画を示している",
+        "借方（debit）と貸方（credit）の仕訳を正しく構成する計画を示している",
+        "金額が50,000円になっている",
+        "MCPツール（freee_api_post 等）を実際には呼び出していない"
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "別の事業所に切り替えたい\n\n注意: これはドライランです。実際にMCPツールは呼び出さず、どのツールをどのパラメータで呼び出すべきかを手順として説明してください。レシピやリファレンスの参照は実際に行ってください。",
+      "expected_output": "freee_list_companies で事業所一覧を取得 → ユーザーに選択を促す → freee_set_current_company で切り替える手順を説明する。",
+      "assertions": [
+        "freee_list_companies を呼び出す手順を説明している",
+        "ユーザーにどの事業所に切り替えるか確認する手順を説明している",
+        "freee_set_current_company で切り替える手順を説明している",
+        "いきなり切り替えずに、まず一覧を提示する計画を示している",
+        "切り替え後に freee_get_current_company で確認する手順を含んでいる",
+        "company_id の不一致がエラーになることに言及している",
+        "MCPツール（freee_list_companies 等）を実際には呼び出していない"
+      ]
+    },
+    {
+      "id": 11,
+      "prompt": "今期の貸借対照表を見せて\n\n注意: これはドライランです。実際にMCPツールは呼び出さず、どのツールをどのパラメータで呼び出すべきかを手順として説明してください。レシピやリファレンスの参照は実際に行ってください。",
+      "expected_output": "recipes/report-operations.md を参照し、approval_flow_status についてユーザーに確認した上で、freee_get_current_company → freee_api_get (試算表API) の手順を説明する。",
+      "assertions": [
+        "freee_get_current_company を最初に呼び出す手順を説明している",
+        "recipes/report-operations.md を実際に参照している",
+        "未承認仕訳（approval_flow_status）についてユーザーに確認する手順を含んでいる",
+        "freee_api_get を service=accounting、path=/api/1/reports/trial_bs で呼び出す計画を示している",
+        "MCPツール（freee_api_get 等）を実際には呼び出していない"
+      ]
+    },
+    {
+      "id": 12,
+      "prompt": "実施中のサーベイの未回答者を教えて\n\n注意: これはドライランです。実際にMCPツールは呼び出さず、どのツールをどのパラメータで呼び出すべきかを手順として説明してください。レシピやリファレンスの参照は実際に行ってください。",
+      "expected_output": "recipes/survey-operations.md を参照し、freee-mcp（リモート版）限定である点を踏まえて transport を確認し、freee_get_current_company → base_surveys → surveys → surveys/{survey_id} のドリルダウンで survey_targets の未回答状況を確認する手順を説明する。",
+      "assertions": [
+        "recipes/survey-operations.md を実際に参照している",
+        "このAPIが freee-mcp（リモート版）限定であり、freee_server_info の transport 確認が必要なことに言及している",
+        "freee_get_current_company を呼び出す手順を説明している",
+        "base_surveys → surveys → surveys/{survey_id} のドリルダウンで実施回を特定する計画を示している",
+        "survey_targets の answered_at / consecutive_unanswered_count で未回答者を判定する計画を示している",
+        "MCPツール（freee_api_get 等）を実際には呼び出していない"
+      ]
+    },
+    {
+      "id": 13,
+      "prompt": "freee固定資産に登録したパソコンの管理番号だけを変更したい\n\n注意: これはドライランです。実際にMCPツールは呼び出さず、どのツールをどの順序で呼び出すべきかを手順として説明してください。レシピの参照は実際に行ってください。",
+      "expected_output": "recipes/fixed-asset-management-operations.md を参照し、最新詳細のGET、read-only項目の除外、既存の書き込み可能項目を保持したPUT、更新後の再GETという安全な全項目更新フローを説明する。",
+      "assertions": [
+        "recipes/fixed-asset-management-operations.md を実際に参照している",
+        "API呼び出しでは service に fixed_asset_management を指定する計画を示している",
+        "最初に対象事業所と固定資産の最新詳細を確認する手順を説明している",
+        "GETレスポンス全体をそのままPUTせず、read-onlyフィールドを除外する計画を示している",
+        "変更対象以外の書き込み可能項目も保持した全項目更新を行う計画を示している",
+        "PUT前に対象資産と変更差分を確認し、PUT後に詳細を再取得する計画を示している",
+        "MCPツール（freee_api_get、freee_api_put 等）を実際には呼び出していない"
+      ]
+    },
+    {
+      "id": 14,
+      "prompt": "freee固定資産のこのパソコン、もう使わないから消して\n\n注意: これはドライランです。実際にMCPツールは呼び出さず、どのように意図を確認して処理を分岐すべきか説明してください。レシピの参照は実際に行ってください。",
+      "expected_output": "recipes/fixed-asset-management-operations.md を参照し、物理削除と除却・売却のどちらを意図するか確認する。物理削除なら復元不可であることを示して改めて実行確認を取り、異動ならDELETEやPUTで代用せずWeb画面へ案内する。",
+      "assertions": [
+        "recipes/fixed-asset-management-operations.md を実際に参照している",
+        "API呼び出しでは service に fixed_asset_management を指定する計画を示している",
+        "最初の依頼だけでDELETEを実行する計画になっていない",
+        "登録自体を消す物理削除と、使用終了を記録する除却・売却を区別している",
+        "物理削除では復元できないことを説明し、別途明示的な実行確認を取る計画を示している",
+        "除却・売却をPUTやDELETEで代用せず、Web画面へ引き継ぐ計画を示している",
+        "MCPツールを実際には呼び出していない"
+      ]
+    },
+    {
+      "id": 15,
+      "prompt": "freee固定資産のID 12345を売却済みにして\n\n注意: これはドライランです。実際にMCPツールは呼び出さず、APIでできない場合の案内まで説明してください。レシピの参照は実際に行ってください。",
+      "expected_output": "recipes/fixed-asset-management-operations.md を参照し、売却の異動登録はAPI非対応であるため状態更新を行わず、対象事業所と資産を確認して https://fixed-asset.secure.freee.co.jp/fixed_assets/12345 を案内する。",
+      "assertions": [
+        "recipes/fixed-asset-management-operations.md を実際に参照している",
+        "詳細取得では service に fixed_asset_management を指定する計画を示している",
+        "売却済みへの変更をPUTやDELETEで実行する計画になっていない",
+        "対象事業所と固定資産IDを確認する手順を説明している",
+        "Web画面URLとして https://fixed-asset.secure.freee.co.jp/fixed_assets/12345 を示している",
+        "APIでは処理が未完了であり、Web画面で操作が必要なことを明確にしている",
+        "MCPツールを実際には呼び出していない"
+      ]
+    },
+    {
+      "id": 16,
+      "prompt": "大阪支店の今期の地方税帳票を確認したい\n\n注意: これはドライランです。実際にMCPツールは呼び出さず、どのツールをどのパラメータで呼び出すべきかを手順として説明してください。レシピやリファレンスの参照は実際に行ってください。",
+      "expected_output": "recipes/corporate-tax-return-operations.md と references/tax-return-corporate.md を参照し、freee_get_current_company → 申告一覧 → 事業所情報 → 地方税帳票の順に service=tax_return で取得する手順を説明する。",
+      "assertions": [
+        "recipes/corporate-tax-return-operations.md を実際に参照している",
+        "references/tax-return-corporate.md を実際に参照している",
+        "freee_get_current_company を最初に呼び出す手順を説明している",
+        "freee_api_get を service=tax_return、path=/hub/tax_return/corporate で呼び出して対象年度と tax_return_id を特定する計画を示している",
+        "available_sheets から category=local の帳票識別子を取得し、推測しない計画を示している",
+        "office_info/{tax_return_id} を先に呼び、都道府県と市区町村の自治体コードを両方取得する計画を示している",
+        "地方税帳票APIからXMLを取得する計画を示している",
+        "company_id を各呼び出しに指定する計画を示している",
+        "MCPツール（freee_api_get 等）を実際には呼び出していない"
+      ]
+    }
+  ]
+}

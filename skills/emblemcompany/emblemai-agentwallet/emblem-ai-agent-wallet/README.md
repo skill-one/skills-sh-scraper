@@ -1,0 +1,47 @@
+# Emblem Agent Wallet
+
+Give AI agents their own crypto wallets. 250+ trading tools across 7 blockchains, powered by [EmblemAI](https://emblemvault.ai).
+
+## Install
+
+```bash
+npm install -g @emblemvault/agentwallet
+```
+
+## Use from an MCP client
+
+If you are using Claude Code, Cursor, Windsurf, or any other MCP-compatible client, you do not need to install this CLI. Point the client at the hosted EmblemAI MCP server instead:
+
+```bash
+claude mcp add --transport http EmblemAI https://emblemvault.ai/api/mcp
+```
+
+The hosted server handles OAuth 2.0 + PKCE in your browser — no API key to paste. API key and JWT bearer auth are also supported. Full install matrix for Claude Desktop, GitHub Copilot CLI, and Gemini CLI: https://emblemvault.ai/docs/mcp.
+
+The CLI below stays the right choice for agent-mode automation, profile workflows, and local development.
+
+## Usage
+
+```bash
+# Interactive mode (browser auth)
+emblemai --profile hustle
+
+# Agent mode (zero-config, single-shot)
+emblemai --agent --profile hustle -m "What are my wallet addresses?"
+```
+
+If more than one profile exists in `~/.emblemai`, every agent-mode invocation must include `--profile <name>`. Agent mode never guesses which wallet identity to use.
+
+## Supported Chains
+
+Solana, Ethereum, Base, BSC, Polygon, Hedera, Bitcoin
+
+## Docs
+
+See [SKILL.md](SKILL.md) for the full reference -- profiles, authentication, commands, plugins, agent mode, and troubleshooting.
+
+## Links
+
+- [emblemvault.dev](https://emblemvault.dev)
+- [npm: @emblemvault/agentwallet](https://www.npmjs.com/package/@emblemvault/agentwallet)
+- [GitHub: EmblemCompany](https://github.com/EmblemCompany)

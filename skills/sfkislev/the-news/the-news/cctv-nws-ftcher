@@ -1,0 +1,237 @@
+SKILL.md
+1.0 KB · ab0d3bec09ab…
+---
+name: cctv-news-fetcher
+description: Fetch and parse news highlights from CCTV News Broadcast (Xinwen Lianbo) for a given date.
+user-invocable: true
+---
+
+# CCTV News Fetcher
+
+This skill allows you to fetch summary titles and content from the CCTV News Broadcast for any specific date.
+
+## Usage
+
+You can ask the agent to:
+- "Fetch CCTV news for 20250210"
+- "Give me the news highlights for yesterday"
+
+## Instructions
+
+When the user asks for news from a specific date:
+1. Format the date as `YYYYMMDD`. If the user says "yesterday" or "today", calculate the date relative to the current local time.
+2. Execute the script at `{baseDir}/scripts/news_crawler.js` using `bun` or `node`.
+   - Command: `bun {baseDir}/scripts/news_crawler.js <YYYYMMDD>`
+3. Parse the JSON output and summarize it for the user. Group news by "Domestic" and "International" if possible based on titles, or just list the highlights.
+
+## Configuration
+
+The skill depends on `node-html-parser`.
+Ensure `bun` is installed in the environment.
+
+package.json
+215 B · b4001030818e…
+{
+    "name": "cctv-news-fetcher",
+    "version": "1.0.0",
+    "description": "Fetch news from CCTV",
+    "main": "scripts/news_crawler.js",
+    "dependencies": {
+        "node-html-parser": "^7.0.2"
+    }
+}
+
+scripts/news_crawler.js
+6.8 KB · d3f04085cc08…
+const { parse } = require('node-html-parser');
+
+async function fetchOlderNews(date) {
+    const url = `https://cctv.cntv.cn/lm/xinwenlianbo/${date}.shtml`;
+    try {
+        const response = await fetch(url);
+        const text = await response.text();
+
+        const rawList = text.match(/title_array_01\((.*)/g) || [];
+        const pageUrls = rawList.slice(1).map(item => item.match(/(http.*)/)?.[0].split('\'')[0] || '');
+
+        const headers = {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+            'Accept-Encoding': 'gzip, deflate',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Cache-Control': 'no-cache',
+            'Cookie': 'cna=DLYSGBDthG4CAbRVCNxSxGT6',
+            'Host': 'tv.cctv.com',
+            'Pragma': 'no-cache',
+            'Proxy-Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.159 Safari/537.36'
+        };
+
+        const data = await Promise.all(pageUrls.map(async pageUrl => {
+            try {
+                const pageResponse = await fetch(pageUrl, { headers });
+                const pageText = await pageResponse.text();
+                const soup = parse(pageText);
+                const title = soup.querySelector('h3')?.text.replace('[视频]', '').trim() || '';
+                const content = soup.querySelector('.cnt_bd')?.text.replace(/\n/g, ' ').trim() || '';
+                return { date, title, content };
+            } catch (err) {
+                console.error(`Error fetching page ${pageUrl}:`, err.message);
+                return null;
+            }
+        }));
+
+        return data.filter(item => item !== null);
+    } catch (err) {
+        console.error(`Error fetching older news for ${date}:`, err.message);
+        return [];
+    }
+}
+
+async function fetchMidNews(date) {
+    const url = `https://cctv.cntv.cn/lm/xinwenlianbo/${date}.shtml`;
+    try {
+        const response = await fetch(url);
+        const text = await response.text();
+        const soup = parse(text);
+
+        const pageUrls = soup.querySelectorAll('#contentELMT1368521805488378 li a')
+            .slice(1)
+            .map(a => a.getAttribute('href') || '');
+
+        const headers = {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+            'Accept-Encoding': 'gzip, deflate',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Cache-Control': 'no-cache',
+            'Cookie': 'cna=DLYSGBDthG4CAbRVCNxSxGT6',
+            'Host': 'tv.cctv.com',
+            'Pragma': 'no-cache',
+            'Proxy-Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.159 Safari/537.36'
+        };
+
+        const data = await Promise.all(pageUrls.map(async pageUrl => {
+            try {
+                const pageResponse = await fetch(pageUrl, { headers });
+                const pageText = await pageResponse.text();
+                const soup = parse(pageText);
+                const title = soup.querySelector('h3')?.text.replace('[视频]', '').trim() || '';
+                const content = soup.querySelector('.cnt_bd')?.text.replace(/\n/g, ' ').trim() || '';
+                return { date, title, content };
+            } catch (err) {
+                console.error(`Error fetching page ${pageUrl}:`, err.message);
+                return null;
+            }
+        }));
+
+        return data.filter(item => item !== null);
+    } catch (err) {
+        console.error(`Error fetching mid news for ${date}:`, err.message);
+        return [];
+    }
+}
+
+async function fetchRecentNews(date) {
+    const url = `https://tv.cctv.com/lm/xwlb/day/${date}.shtml`;
+    try {
+        const response = await fetch(url);
+        const text = await response.text();
+        const soup = parse(text);
+
+        const pageUrls = soup.querySelectorAll('li a').slice(1).map(a => a.getAttribute('href') || '');
+
+        const headers = {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+            'Accept-Encoding': 'gzip, deflate',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Cache-Control': 'no-cache',
+            'Cookie': 'cna=DLYSGBDthG4CAbRVCNxSxGT6',
+            'Host': 'tv.cctv.com',
+            'Pragma': 'no-cache',
+            'Proxy-Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.159 Safari/537.36'
+        };
+
+        const data = await Promise.all(pageUrls.map(async pageUrl => {
+            try {
+                const pageResponse = await fetch(pageUrl, { headers });
+                const pageText = await pageResponse.text();
+                const soup = parse(pageText);
+                const title = soup.querySelector('h3')?.text.replace('[视频]', '').trim() || soup.querySelector('.tit')?.text.trim() || '';
+                const content = soup.querySelector('.cnt_bd')?.text.replace(/\n/g, ' ').trim() || soup.querySelector('.content_area')?.text.trim() || '';
+                return { date, title, content };
+            } catch (err) {
+                console.error(`Error fetching page ${pageUrl}:`, err.message);
+                return null;
+            }
+        }));
+
+        return data.filter(item => item !== null);
+    } catch (err) {
+        console.error(`Error fetching recent news for ${date}:`, err.message);
+        return [];
+    }
+}
+
+async function main() {
+    let date = process.argv[2];
+    if (!date) {
+        const today = new Date();
+        date = today.toISOString().slice(0, 10).replace(/-/g, '');
+    }
+
+    console.log(`Fetching news for date: ${date}...`);
+
+    // Try recent first, as per original logic
+    let news = await fetchRecentNews(date);
+
+    if (news.length === 0) {
+        console.log("No news found via recent crawler, trying mid...");
+        news = await fetchMidNews(date);
+    }
+
+    if (news.length === 0) {
+        console.log("No news found via mid crawler, trying older...");
+        news = await fetchOlderNews(date);
+    }
+
+    console.log(JSON.stringify(news, null, 2));
+}
+
+if (require.main === module) {
+    main().catch(err => {
+        console.error("Critical error:", err);
+        process.exit(1);
+    });
+}
+
+module.exports = {
+    fetchRecentNews,
+    fetchMidNews,
+    fetchOlderNews
+}; 
+examples/example.md
+445 B · bf4672b785cf…
+# Example Usage
+
+## Prompt
+"获取 20250210 的新闻联播摘要"
+
+## Internal Execution
+The agent will run:
+```bash
+bun skills/cctv-news-fetcher/scripts/news_crawler.js 20250210
+```
+
+## Result
+[
+  {
+    "date": "20250210",
+    "title": "全国铁路完成固定资产投资439亿元",
+    "content": "央视网消息（新闻联播）：1月全国铁路完成固定资产投资439亿元，同比增长3.2%..."
+  },
+  ...
+] 

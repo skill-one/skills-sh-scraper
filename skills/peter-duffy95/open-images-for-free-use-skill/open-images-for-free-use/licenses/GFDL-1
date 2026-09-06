@@ -1,0 +1,80 @@
+GNU Free Documentation License v1.3
+https://www.gnu.org/licenses/fdl-1.3.html
+
+Version 1.3, 3 November 2008
+
+Copyright (C) 2000, 2001, 2002, 2007, 2008 Free Software Foundation, Inc.
+
+Everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.
+
+0. PREAMBLE
+
+The purpose of this License is to make manuals, textbooks, and other functional documents "free" in the sense of freedom: ensuring effective rights to copy and redistribute, with or without modifications, commercially or noncommercially. This License also preserves author and publisher attribution while limiting their responsibility for others' modifications.
+
+This is a "copyleft" license where derivative works must remain free in the same manner. It complements the GNU General Public License and was designed for free software manuals, as free programs should include free documentation. However, it applies to any textual work regardless of subject matter.
+
+1. APPLICABILITY AND DEFINITIONS
+
+This License applies to manuals or works in any medium containing a notice stating distribution under these terms. The "Document" refers to any such work, and "you" means any member of the public who accepts the license by copying, modifying, or distributing it.
+
+Key Definitions:
+- Modified Version: Any work containing the Document or portions thereof, with modifications and/or translations
+- Secondary Section: Named appendix or front-matter section dealing exclusively with publisher/author relationships to the overall subject
+- Invariant Sections: Designated Secondary Sections that cannot be modified
+- Cover Texts: Front-Cover Texts (maximum 5 words) or Back-Cover Texts (maximum 25 words)
+- Transparent Copy: Machine-readable format suitable for straightforward revision with generic tools
+- Opaque Copy: Any copy not meeting Transparent requirements
+- Title Page: For printed books, the title page and necessary following pages
+- Publisher: Any person or entity distributing copies to the public
+
+2. VERBATIM COPYING
+
+You may copy and distribute the Document in any medium, commercially or noncommercially, provided that this License, copyright notices, and the license notice remain in all copies. You add no other conditions and do not use technical measures to obstruct reading or further copying.
+
+3. COPYING IN QUANTITY
+
+When publishing printed copies numbering more than 100, with required Cover Texts: enclose copies in covers clearly displaying all Cover Texts, identify yourself as publisher, present the full title. For Opaque copies numbering more than 100, include machine-readable Transparent copies or state a network location for public download.
+
+4. MODIFICATIONS
+
+You may copy and distribute Modified Versions under sections 2-3, provided you: release under this License, use a distinct title, list responsible persons, state publisher name, preserve copyright notices, add your own copyright notice, include license notice, preserve Invariant Sections and Cover Texts lists, include unaltered copy of this License, preserve History section, preserve network locations, preserve Acknowledgements/Dedications sections, preserve all Invariant Sections, delete any Endorsements sections.
+
+5. COMBINING DOCUMENTS
+
+You may combine the Document with other GFDL-licensed documents, including all Invariant Sections unmodified, combining History/Acknowledgements/Dedications sections, and deleting Endorsements sections.
+
+6. COLLECTIONS OF DOCUMENTS
+
+You may create collections replacing individual License copies with a single copy, provided you follow verbatim copying rules for each document.
+
+7. AGGREGATION WITH INDEPENDENT WORKS
+
+Compilation with other separate works on a storage medium is "aggregate" if compilation copyright doesn't limit users' rights beyond individual works.
+
+8. TRANSLATION
+
+Translation is modification. You may distribute translations under section 4 terms. Replacing Invariant Sections with translations requires copyright holders' permission. Original English version prevails in disagreements.
+
+9. TERMINATION
+
+You may not copy, modify, sublicense, or distribute except as expressly provided. Ceasing violations reinstates your license provisionally, or permanently if the holder fails to notify within 60 days or if cured within 30 days of notice.
+
+10. FUTURE REVISIONS OF THIS LICENSE
+
+The Free Software Foundation may publish new versions. If "or any later version" is specified, you may follow that version or any later published version.
+
+11. RELICENSING
+
+Massive Multiauthor Collaboration Sites may republish eligible content under CC-BY-SA under specific conditions before August 1, 2009.
+
+ADDENDUM: How to Use This License
+
+Include a License copy in your document with the following notice after the title page:
+
+    Copyright (C) YEAR YOUR NAME.
+    Permission is granted to copy, distribute and/or modify this document
+    under the terms of the GNU Free Documentation License, Version 1.3
+    or any later version published by the Free Software Foundation;
+    with no Invariant Sections, no Front-Cover Texts, and no Back-Cover Texts.
+    A copy of the license is included in the section entitled
+    "GNU Free Documentation License".

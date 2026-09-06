@@ -1,0 +1,68 @@
+name: test
+
+# Runs PR governance checks and the Node test suite.
+#
+# Pull requests use pull_request_target and only execute trusted base-branch code
+# against PR metadata. They intentionally do not checkout, install, or test
+# PR-controlled code. Pushes to main run the full Node suite on the merged
+# repository state.
+#
+# Use GitHub-hosted Ubuntu runners so the public repository can run tests without
+# depending on private org-level self-hosted runner group access.
+
+on:
+  pull_request_target:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout trusted base for PR guard
+        if: github.event_name == 'pull_request_target'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 1
+
+      - name: Checkout merged code for main tests
+        if: github.event_name == 'push'
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22' # engines: node >=22.12
+          cache: npm
+
+      - name: Collect changed files for governance guard
+        if: github.event_name == 'pull_request_target'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[].filename' > pr-changed-files.txt
+
+      - name: Harness/evaluator governance guard
+        if: github.event_name == 'pull_request_target'
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_CHANGED_FILES_FILE: pr-changed-files.txt
+        run: node scripts/harness-governance-check.js
+
+      - name: Install dependencies
+        if: github.event_name == 'push'
+        run: npm ci
+
+      - name: Run tests (node --test)
+        if: github.event_name == 'push'
+        run: npm test

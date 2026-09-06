@@ -1,0 +1,829 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_PATH="$SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  cc-use start [--project DIR] [--agent codex|claude|auto] [--session NAME]
+  cc-use send "TASK" --session NAME [--project DIR]
+  cc-use keys KEY... --session NAME [--project DIR]
+  cc-use monitor --session NAME [--project DIR]
+  cc-use status --session NAME [--project DIR] [--json]
+  cc-use scrollback --session NAME [--lines N] [--start LINE] [--end LINE]
+  cc-use finish --session NAME [--project DIR]
+  cc-use snapshot SESSION
+  cc-use list
+EOF
+}
+
+die() {
+  echo "cc-use: $*" >&2
+  exit 1
+}
+
+tmux_socket_name() {
+  local socket_name="${CC_USE_TMUX_SOCKET_NAME:-cc-use}"
+  case "$socket_name" in
+    ''|*[![:alnum:]_.-]*) die "invalid tmux socket name: $socket_name" ;;
+  esac
+  printf '%s' "$socket_name"
+}
+
+tmux_socket_dir() {
+  printf '%s' "${CC_USE_TMUX_SOCKET_DIR:-$HOME/.cc-use/tmux}"
+}
+
+tmux_socket_path() {
+  local socket_dir
+  socket_dir="$(tmux_socket_dir)"
+  mkdir -p "$socket_dir"
+  chmod 700 "$socket_dir"
+  printf '%s/%s' "$socket_dir" "$(tmux_socket_name)"
+}
+
+tmux_cmd() {
+  local status
+  if env tmux -S "$(tmux_socket_path)" "$@"; then
+    return 0
+  else
+    status=$?
+    return "$status"
+  fi
+}
+
+json_escape() {
+  tr '\n\r\t' '   ' | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+safe_name() {
+  printf '%s' "$1" | tr -c '[:alnum:]_-' '-'
+}
+
+now_epoch() {
+  date +%s
+}
+
+project_abs() {
+  (cd "$1" && pwd)
+}
+
+cc_dir() {
+  printf '%s/.cc-use' "$1"
+}
+
+state_dir() {
+  printf '%s/state' "$(cc_dir "$1")"
+}
+
+watch_dir() {
+  local project_dir="$1"
+  local session="$2"
+  printf '%s/%s' "$(state_dir "$project_dir")" "$(safe_name "$session")"
+}
+
+agent_exit_file() {
+  local project_dir="$1"
+  local session="$2"
+  printf '%s/agent-exit.env' "$(watch_dir "$project_dir" "$session")"
+}
+
+new_session_name() {
+  local project_dir="$1"
+  local agent="$2"
+  printf 'ccu-%s-%s-%s-%s' \
+    "$(safe_name "$agent")" \
+    "$(safe_name "$(basename "$project_dir")")" \
+    "$(date +%Y%m%d%H%M%S)" \
+    "$$"
+}
+
+validate_session_name() {
+  local session="$1"
+  [ -n "$session" ] || die "session name must not be empty"
+  [ "$session" = "$(safe_name "$session")" ] || die "session name may contain only letters, numbers, underscores, and hyphens"
+}
+
+tmux_session_target() {
+  printf '=%s' "$1"
+}
+
+tmux_pane_target() {
+  printf '=%s:' "$1"
+}
+
+validate_agent() {
+  case "$1" in
+    codex|claude) ;;
+    *) die "unsupported agent: $1" ;;
+  esac
+}
+
+detect_agent() {
+  if [ -n "${CODEX_THREAD_ID:-}" ] || [ -n "${CODEX_CI:-}" ] || [ -n "${CODEX_HOME:-}" ]; then
+    printf 'codex'
+  elif [ -n "${CLAUDECODE:-}" ] || [ -n "${CLAUDE_CODE_ENTRYPOINT:-}" ]; then
+    printf 'claude'
+  else
+    printf 'codex'
+  fi
+}
+
+resolve_agent() {
+  case "$1" in
+    auto|"") detect_agent ;;
+    codex|claude) printf '%s' "$1" ;;
+    *) die "unsupported agent: $1" ;;
+  esac
+}
+
+validate_positive_integer() {
+  local value="$1"
+  local flag="$2"
+  case "$value" in
+    ''|*[!0-9]*) die "$flag must be a positive integer" ;;
+  esac
+  [ "$value" -gt 0 ] || die "$flag must be a positive integer"
+}
+
+validate_nonnegative_integer() {
+  local value="$1"
+  local flag="$2"
+  case "$value" in
+    ''|*[!0-9]*) die "$flag must be a non-negative integer" ;;
+  esac
+}
+
+validate_line_spec() {
+  local value="$1"
+  local flag="$2"
+  local number
+  [ -n "$value" ] || die "$flag must be '-' or an integer line number"
+  [ "$value" = "-" ] && return 0
+  number="${value#-}"
+  [ -n "$number" ] || die "$flag must be '-' or an integer line number"
+  case "$number" in
+    *[!0-9]*) die "$flag must be '-' or an integer line number" ;;
+  esac
+}
+
+validate_tmux_key() {
+  local key="$1"
+  case "$key" in
+    Enter|Escape|Up|Down|Left|Right|Tab|BTab|Space|BSpace|DC|Home|End|IC|NPage|PPage) ;;
+    F[1-9]|F1[0-2]|C-[[:alnum:]]|M-[[:alnum:]]|[[:alnum:]]) ;;
+    *) die "unsupported key: $key" ;;
+  esac
+}
+
+require_session() {
+  local session="$1"
+  [ -n "$session" ] || die "--session is required"
+  validate_session_name "$session"
+}
+
+hash_text() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl dgst -sha256 -r | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    LC_ALL=C LANG=C shasum -a 256 | awk '{print $1}'
+  else
+    cksum | awk '{print $1}'
+  fi
+}
+
+normalize_screen() {
+  # Force byte-order ranges so ANSI stripping behaves consistently across locales.
+  LC_ALL=C sed -E $'s/\x1b\\[[0-?]*[ -\\/]*[@-~]//g; s/[[:space:]]+$//'
+}
+
+tmux_has_session() {
+  if tmux_cmd has-session -t "$(tmux_session_target "$1")" >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
+}
+
+tmux_prepare_capture() {
+  local session="$1"
+  local geometry
+  local width
+  local height
+  local attached
+  local target_width
+  local target_height
+
+  geometry="$(tmux_cmd display-message -p -t "$(tmux_pane_target "$session")" '#{pane_width} #{pane_height} #{session_attached}' 2>/dev/null || true)"
+  read -r width height attached <<EOF
+$geometry
+EOF
+  case "$width" in ''|*[!0-9]*) return 0 ;; esac
+  case "$height" in ''|*[!0-9]*) return 0 ;; esac
+  [ "$attached" = "0" ] || return 0
+  if [ "$width" -ge 40 ] && [ "$height" -ge 12 ]; then
+    return 0
+  fi
+
+  target_width="$width"
+  target_height="$height"
+  [ "$target_width" -ge 160 ] || target_width=160
+  [ "$target_height" -ge 50 ] || target_height=50
+  tmux_cmd resize-window -t "$(tmux_session_target "$session")" -x "$target_width" -y "$target_height" >/dev/null 2>&1 || true
+}
+
+tmux_capture() {
+  local session="$1"
+  tmux_prepare_capture "$session"
+  tmux_cmd capture-pane -t "$(tmux_pane_target "$session")" -p 2>/dev/null | normalize_screen
+}
+
+tmux_capture_scrollback() {
+  local session="$1"
+  local start="$2"
+  local end="$3"
+  tmux_cmd capture-pane -t "$(tmux_pane_target "$session")" -p -S "$start" -E "$end" 2>/dev/null | normalize_screen
+}
+
+tmux_send_text() {
+  local session="$1"
+  local text="$2"
+  local tmp
+  local buffer
+  local pane_target
+  tmp="$(mktemp)"
+  buffer="cc-use-send-$$"
+  pane_target="$(tmux_pane_target "$session")"
+  printf '%s' "$text" > "$tmp"
+  tmux_cmd send-keys -t "$pane_target" C-u
+  tmux_cmd load-buffer -b "$buffer" "$tmp"
+  tmux_cmd paste-buffer -d -b "$buffer" -t "$pane_target"
+  rm -f "$tmp"
+  sleep 0.5
+  tmux_cmd send-keys -t "$pane_target" Enter
+  sleep 0.7
+  tmux_cmd send-keys -t "$pane_target" C-m
+  sleep 0.7
+  tmux_cmd send-keys -t "$pane_target" Enter
+}
+
+tmux_send_once() {
+  local session="$1"
+  local text="$2"
+  local tmp
+  local buffer
+  local pane_target
+  tmp="$(mktemp)"
+  buffer="cc-use-once-$$"
+  pane_target="$(tmux_pane_target "$session")"
+  printf '%s' "$text" > "$tmp"
+  tmux_cmd send-keys -t "$pane_target" C-u
+  tmux_cmd load-buffer -b "$buffer" "$tmp"
+  tmux_cmd paste-buffer -d -b "$buffer" -t "$pane_target"
+  rm -f "$tmp"
+  sleep 0.5
+  tmux_cmd send-keys -t "$pane_target" Enter
+}
+
+tmux_send_keys() {
+  local session="$1"
+  shift
+  tmux_cmd send-keys -t "$(tmux_pane_target "$session")" "$@"
+}
+
+build_runner_command() {
+  local exit_file="$1"
+  shift
+  printf 'command %q run-agent --exit-file %q --' "$SCRIPT_PATH" "$exit_file"
+  printf ' %q' "$@"
+}
+
+build_codex_command() {
+  local exit_file="$1"
+  build_runner_command "$exit_file" codex --no-alt-screen --dangerously-bypass-approvals-and-sandbox
+}
+
+build_agent_command() {
+  local agent="$1"
+  local exit_file="$2"
+  validate_agent "$agent"
+  case "$agent" in
+    codex)
+      build_codex_command "$exit_file"
+      ;;
+    claude)
+      build_runner_command "$exit_file" claude --dangerously-skip-permissions
+      ;;
+  esac
+}
+
+launch_agent_session() {
+  local session="$1"
+  local project="$2"
+  local command="$3"
+  local session_target
+  local pane_target
+  session_target="$(tmux_session_target "$session")"
+  pane_target="$(tmux_pane_target "$session")"
+
+  tmux_cmd new-session -d -s "$session" -c "$project"
+  tmux_cmd set-option -t "$session_target" history-limit 50000 >/dev/null 2>&1 || true
+
+  # Launch from the login shell so its normal startup files provide PATH and credentials.
+  sleep 1
+  tmux_cmd send-keys -t "$pane_target" "$command" Enter
+}
+
+write_session_metadata() {
+  local project_dir="$1"
+  local session="$2"
+  local agent="$3"
+  local state
+  local tmp
+  state="$(watch_dir "$project_dir" "$session")"
+  mkdir -p "$state"
+  tmp="$(mktemp "$state/session.json.XXXXXX")"
+  cat > "$tmp" <<EOF
+{
+  "agent": "$(printf '%s' "$agent" | json_escape)",
+  "created_at": $(now_epoch),
+  "project_dir": "$(printf '%s' "$project_dir" | json_escape)",
+  "session": "$(printf '%s' "$session" | json_escape)"
+}
+EOF
+  mv "$tmp" "$state/session.json"
+}
+
+write_agent_exit_state() {
+  local exit_file="$1"
+  local exit_code="$2"
+  local tmp
+  mkdir -p "$(dirname "$exit_file")"
+  tmp="$(mktemp "$exit_file.XXXXXX")"
+  cat > "$tmp" <<EOF
+exit_code=$exit_code
+exited_at=$(now_epoch)
+EOF
+  mv "$tmp" "$exit_file"
+}
+
+read_agent_exit_code() {
+  local exit_file="$1"
+  local exit_code
+  [ -f "$exit_file" ] || return 1
+  exit_code="$(awk -F= '$1 == "exit_code" && $2 ~ /^[0-9]+$/ { print $2; exit }' "$exit_file")"
+  [ -n "$exit_code" ] || return 1
+  printf '%s' "$exit_code"
+}
+
+wait_for_agent_exit() {
+  local exit_file="$1"
+  local timeout_seconds="$2"
+  local deadline
+  local exit_code
+  deadline=$(( $(now_epoch) + timeout_seconds ))
+  while :; do
+    if exit_code="$(read_agent_exit_code "$exit_file")"; then
+      printf '%s' "$exit_code"
+      return 0
+    fi
+    [ "$(now_epoch)" -lt "$deadline" ] || return 1
+    sleep 1
+  done
+}
+
+cmd_run_agent() {
+  local exit_file
+  local exit_code
+  [ "${1:-}" = "--exit-file" ] || die "run-agent requires --exit-file"
+  [ "$#" -ge 4 ] || die "run-agent requires a command"
+  exit_file="$2"
+  shift 2
+  [ "${1:-}" = "--" ] || die "run-agent requires -- before the command"
+  shift
+  [ "$#" -gt 0 ] || die "run-agent requires a command"
+
+  set +e
+  command "$@"
+  exit_code=$?
+  set -e
+  write_agent_exit_state "$exit_file" "$exit_code"
+  return "$exit_code"
+}
+
+write_watch_state() {
+  local project_dir="$1"
+  local session="$2"
+  local phase="$3"
+  local digest="$4"
+  local silence_started="$5"
+  local quiet_seconds="$6"
+  local observations="$7"
+  local last_observation_json="${8:-null}"
+  local state
+  local env_tmp
+  local json_tmp
+  state="$(watch_dir "$project_dir" "$session")"
+  mkdir -p "$state"
+  env_tmp="$(mktemp "$state/watch.env.XXXXXX")"
+  json_tmp="$(mktemp "$state/watch.json.XXXXXX")"
+  cat > "$env_tmp" <<EOF
+last_digest=$(printf '%q' "$digest")
+silence_started_at=$silence_started
+quiet_seconds=$quiet_seconds
+observation_count=$observations
+watch_phase=$(printf '%q' "$phase")
+EOF
+  cat > "$json_tmp" <<EOF
+{
+  "last_digest": "$(printf '%s' "$digest" | json_escape)",
+  "last_observation": $last_observation_json,
+  "observation_count": $observations,
+  "phase": "$(printf '%s' "$phase" | json_escape)",
+  "quiet_seconds": $quiet_seconds,
+  "session": "$(printf '%s' "$session" | json_escape)",
+  "silence_started_at": $silence_started
+}
+EOF
+  mv "$env_tmp" "$state/watch.env"
+  mv "$json_tmp" "$state/watch.json"
+}
+
+load_watch_state() {
+  local project_dir="$1"
+  local session="$2"
+  local env_file
+  env_file="$(watch_dir "$project_dir" "$session")/watch.env"
+  if [ -f "$env_file" ]; then
+    # shellcheck disable=SC1090
+    source "$env_file"
+  else
+    last_digest=""
+    silence_started_at=0
+    quiet_seconds=0
+    observation_count=0
+    watch_phase=""
+  fi
+}
+
+watch_once() {
+  local project_dir="$1"
+  local session="$2"
+  local phase="$3"
+  local initial_quiet="$4"
+  local poll_interval="$5"
+  local state
+  local screens
+  local history
+  local curr
+  local digest
+  local observed_digest=""
+  local silence_started
+  local silence
+  local now
+  local sleep_for
+  local remaining
+  local screen_path
+  local observation_json
+  state="$(watch_dir "$project_dir" "$session")"
+  screens="$state/screens"
+  history="$state/watch.observations.jsonl"
+  mkdir -p "$state" "$screens"
+
+  load_watch_state "$project_dir" "$session"
+
+  while :; do
+    now="$(now_epoch)"
+    curr="$(mktemp)"
+    if ! tmux_capture "$session" > "$curr"; then
+      observation_json="{\"event\":\"session_unavailable\",\"phase\":\"$(printf '%s' "$phase" | json_escape)\",\"session\":\"$(printf '%s' "$session" | json_escape)\",\"observed_at\":$now}"
+      printf '%s\n' "$observation_json"
+      printf '%s\n' "$observation_json" >> "$history"
+      rm -f "$curr"
+      return 0
+    fi
+    digest="$(hash_text < "$curr")"
+
+    if [ "$digest" != "$observed_digest" ]; then
+      observed_digest="$digest"
+      silence_started="$now"
+      write_watch_state "$project_dir" "$session" "$phase" "$digest" "$silence_started" "$initial_quiet" "${observation_count:-0}" "null"
+    fi
+
+    silence=$((now - silence_started))
+    if [ "$silence" -ge "$initial_quiet" ]; then
+      observation_count=$(( ${observation_count:-0} + 1 ))
+      screen_path="$screens/$(safe_name "$session")-$(printf '%04d' "$observation_count").txt"
+      cp "$curr" "$screen_path"
+      observation_json="{\"event\":\"screen_stable\",\"phase\":\"$(printf '%s' "$phase" | json_escape)\",\"session\":\"$(printf '%s' "$session" | json_escape)\",\"observed_at\":$now,\"silence_seconds\":$silence,\"screen_digest\":\"$digest\",\"screen_path\":\"$(printf '%s' "$screen_path" | json_escape)\"}"
+      write_watch_state "$project_dir" "$session" "$phase" "$digest" "$silence_started" "$initial_quiet" "$observation_count" "$observation_json"
+      printf '%s\n' "$observation_json"
+      printf '%s\n' "$observation_json" >> "$history"
+      rm -f "$curr"
+      return 0
+    fi
+
+    rm -f "$curr"
+    remaining=$((initial_quiet - silence))
+    sleep_for="$poll_interval"
+    if [ "$remaining" -lt "$sleep_for" ]; then
+      sleep_for="$remaining"
+    fi
+    [ "$sleep_for" -gt 0 ] || sleep_for=1
+    sleep "$sleep_for"
+  done
+}
+
+cmd_start() {
+  local project="."
+  local session=""
+  local agent="auto"
+  local initial_quiet=30
+  local poll_interval=2
+  local command
+  local exit_file
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --project) project="$2"; shift 2 ;;
+      --agent) agent="$2"; shift 2 ;;
+      --session) session="$2"; shift 2 ;;
+      --initial-quiet-seconds) initial_quiet="$2"; shift 2 ;;
+      --poll-interval) poll_interval="$2"; shift 2 ;;
+      *) die "unknown start option: $1" ;;
+    esac
+  done
+  validate_nonnegative_integer "$initial_quiet" "--initial-quiet-seconds"
+  validate_positive_integer "$poll_interval" "--poll-interval"
+  project="$(project_abs "$project")"
+  agent="$(resolve_agent "$agent")"
+  validate_agent "$agent"
+  [ -n "$session" ] || session="$(new_session_name "$project" "$agent")"
+  validate_session_name "$session"
+  tmux_has_session "$session" && die "session already exists: $session"
+  write_session_metadata "$project" "$session" "$agent"
+  exit_file="$(agent_exit_file "$project" "$session")"
+  rm -f "$exit_file"
+  command="$(build_agent_command "$agent" "$exit_file")"
+  launch_agent_session "$session" "$project" "$command"
+  watch_once "$project" "$session" "startup" "$initial_quiet" "$poll_interval"
+}
+
+cmd_send() {
+  local task="$1"
+  shift
+  local project="."
+  local session=""
+  local initial_quiet=30
+  local poll_interval=2
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --project) project="$2"; shift 2 ;;
+      --session) session="$2"; shift 2 ;;
+      --initial-quiet-seconds) initial_quiet="$2"; shift 2 ;;
+      --poll-interval) poll_interval="$2"; shift 2 ;;
+      *) die "unknown send option: $1" ;;
+    esac
+  done
+  validate_nonnegative_integer "$initial_quiet" "--initial-quiet-seconds"
+  validate_positive_integer "$poll_interval" "--poll-interval"
+  project="$(project_abs "$project")"
+  require_session "$session"
+  tmux_has_session "$session" || die "session is not available: $session"
+  tmux_send_text "$session" "$task"
+  watch_once "$project" "$session" "work" "$initial_quiet" "$poll_interval"
+}
+
+cmd_keys() {
+  local project="."
+  local session=""
+  local initial_quiet=30
+  local poll_interval=2
+  local -a keys=()
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --project) project="$2"; shift 2 ;;
+      --session) session="$2"; shift 2 ;;
+      --initial-quiet-seconds) initial_quiet="$2"; shift 2 ;;
+      --poll-interval) poll_interval="$2"; shift 2 ;;
+      --*) die "unknown keys option: $1" ;;
+      *)
+        validate_tmux_key "$1"
+        keys+=("$1")
+        shift
+        ;;
+    esac
+  done
+  [ "${#keys[@]}" -gt 0 ] || die "keys requires at least one key"
+  validate_nonnegative_integer "$initial_quiet" "--initial-quiet-seconds"
+  validate_positive_integer "$poll_interval" "--poll-interval"
+  project="$(project_abs "$project")"
+  require_session "$session"
+  tmux_has_session "$session" || die "session is not available: $session"
+  tmux_send_keys "$session" "${keys[@]}"
+  watch_once "$project" "$session" "interaction" "$initial_quiet" "$poll_interval"
+}
+
+cmd_monitor() {
+  local project="."
+  local session=""
+  local initial_quiet=30
+  local poll_interval=2
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --project) project="$2"; shift 2 ;;
+      --session) session="$2"; shift 2 ;;
+      --initial-quiet-seconds) initial_quiet="$2"; shift 2 ;;
+      --poll-interval) poll_interval="$2"; shift 2 ;;
+      *) die "unknown monitor option: $1" ;;
+    esac
+  done
+  validate_nonnegative_integer "$initial_quiet" "--initial-quiet-seconds"
+  validate_positive_integer "$poll_interval" "--poll-interval"
+  project="$(project_abs "$project")"
+  require_session "$session"
+  watch_once "$project" "$session" "monitor" "$initial_quiet" "$poll_interval"
+}
+
+cmd_scrollback() {
+  local session=""
+  local lines=2000
+  local start=""
+  local end="-"
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --session) session="$2"; shift 2 ;;
+      --lines) lines="$2"; shift 2 ;;
+      --start) start="$2"; shift 2 ;;
+      --end) end="$2"; shift 2 ;;
+      *) die "unknown scrollback option: $1" ;;
+    esac
+  done
+  validate_positive_integer "$lines" "--lines"
+  if [ -z "$start" ]; then
+    start="-$lines"
+  fi
+  validate_line_spec "$start" "--start"
+  validate_line_spec "$end" "--end"
+  require_session "$session"
+  tmux_capture_scrollback "$session" "$start" "$end"
+}
+
+cmd_status() {
+  local project="."
+  local session=""
+  local as_json=false
+  local now
+  local silence
+  local remaining
+  local available
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --project) project="$2"; shift 2 ;;
+      --session) session="$2"; shift 2 ;;
+      --json) as_json=true; shift ;;
+      *) die "unknown status option: $1" ;;
+    esac
+  done
+  project="$(project_abs "$project")"
+  require_session "$session"
+  load_watch_state "$project" "$session"
+  now="$(now_epoch)"
+  if [ "${silence_started_at:-0}" -le 0 ]; then
+    silence=0
+  else
+    silence=$((now - silence_started_at))
+  fi
+  remaining=$(( ${quiet_seconds:-0} - silence ))
+  [ "$remaining" -ge 0 ] || remaining=0
+  if tmux_has_session "$session"; then available=true; else available=false; fi
+  if $as_json; then
+    cat <<EOF
+{"project_dir":"$(printf '%s' "$project" | json_escape)","session":"$(printf '%s' "$session" | json_escape)","session_available":$available,"watch":{"phase":"$(printf '%s' "${watch_phase:-}" | json_escape)","observation_count":${observation_count:-0},"silence_seconds":$silence,"seconds_until_stable":$remaining}}
+EOF
+  else
+    echo "project: $project"
+    echo "session: $session"
+    echo "session_available: $available"
+    echo "phase: ${watch_phase:-}"
+    echo "observations: ${observation_count:-0}"
+    echo "silence_seconds: $silence"
+    echo "seconds_until_stable: $remaining"
+  fi
+}
+
+cmd_finish() {
+  local project="."
+  local session=""
+  local state
+  local exit_file
+  local exit_code=""
+  local shutdown
+  local reason=""
+  local grace_seconds="${CC_USE_FINISH_GRACE_SECONDS:-10}"
+  local now
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --project) project="$2"; shift 2 ;;
+      --session) session="$2"; shift 2 ;;
+      *) die "unknown finish option: $1" ;;
+    esac
+  done
+  project="$(project_abs "$project")"
+  require_session "$session"
+  validate_nonnegative_integer "$grace_seconds" "CC_USE_FINISH_GRACE_SECONDS"
+  state="$(watch_dir "$project" "$session")"
+  exit_file="$(agent_exit_file "$project" "$session")"
+
+  if ! exit_code="$(read_agent_exit_code "$exit_file")"; then
+    if tmux_has_session "$session"; then
+      tmux_send_once "$session" "/exit" >/dev/null 2>&1 || true
+    fi
+    if ! exit_code="$(wait_for_agent_exit "$exit_file" "$grace_seconds")"; then
+      shutdown="forced"
+      reason="agent_exit_timeout"
+    fi
+  fi
+
+  if [ -n "$exit_code" ]; then
+    if [ "$exit_code" -eq 0 ]; then
+      shutdown="graceful"
+    else
+      shutdown="abnormal"
+    fi
+  fi
+
+  # The agent has exited or exceeded its grace period; remove the remaining shell session.
+  tmux_cmd kill-session -t "$(tmux_session_target "$session")" >/dev/null 2>&1 || true
+  rm -rf "$state"
+  rmdir "$(state_dir "$project")" 2>/dev/null || true
+  rmdir "$(cc_dir "$project")" 2>/dev/null || true
+  now="$(now_epoch)"
+  if [ "$shutdown" = "forced" ]; then
+    printf '{"event":"session_finished","session":"%s","shutdown":"forced","exit_code":null,"reason":"%s","finished_at":%s}\n' \
+      "$(printf '%s' "$session" | json_escape)" \
+      "$(printf '%s' "$reason" | json_escape)" \
+      "$now"
+  else
+    printf '{"event":"session_finished","session":"%s","shutdown":"%s","exit_code":%s,"finished_at":%s}\n' \
+      "$(printf '%s' "$session" | json_escape)" \
+      "$shutdown" \
+      "$exit_code" \
+      "$now"
+  fi
+}
+
+main() {
+  local cmd
+  cmd="${1:-}"
+  [ -n "$cmd" ] || { usage; exit 1; }
+  shift || true
+
+  case "$cmd" in
+    start)
+      cmd_start "$@"
+      ;;
+    send)
+      [ "$#" -ge 1 ] || die "send requires TASK"
+      task="$1"
+      shift
+      cmd_send "$task" "$@"
+      ;;
+    keys)
+      cmd_keys "$@"
+      ;;
+    monitor)
+      cmd_monitor "$@"
+      ;;
+    status)
+      cmd_status "$@"
+      ;;
+    scrollback)
+      cmd_scrollback "$@"
+      ;;
+    run-agent)
+      cmd_run_agent "$@"
+      ;;
+    finish)
+      cmd_finish "$@"
+      ;;
+    snapshot)
+      [ "$#" -eq 1 ] || die "snapshot requires SESSION"
+      validate_session_name "$1"
+      tmux_capture "$1"
+      ;;
+    list)
+      tmux_cmd list-sessions -F "#{session_name}" 2>/dev/null || true
+      ;;
+    *)
+      usage
+      exit 1
+      ;;
+  esac
+}
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  main "$@"
+fi

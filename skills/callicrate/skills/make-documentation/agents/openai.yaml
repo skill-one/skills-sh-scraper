@@ -1,0 +1,6 @@
+interface:
+  display_name: "Documentation Author"
+  short_description: "Write project documentation"
+  default_prompt: "Write or update project documentation (READMEs, architecture docs, changelogs, runbooks, install docs) using verified source material. Keep output source-backed and terse."
+policy:
+  allow_implicit_invocation: true

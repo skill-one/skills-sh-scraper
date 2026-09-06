@@ -1,0 +1,38 @@
+{
+  "name": "notion-update-data-source",
+  "title": "Update Notion data source",
+  "description": "Update a Notion data source's schema, title, or attributes using SQL DDL statements. Returns Markdown showing updated structure and schema.\nAccepts a data source ID (collection ID from fetch response's <data-source> tag) or a single-source database ID. Multi-source databases require the specific data source ID.\nThe statements param accepts semicolon-separated DDL statements:\n- ADD COLUMN \"Name\" <type> - add a new property\n- DROP COLUMN \"Name\" - remove a property\n- RENAME COLUMN \"Old\" TO \"New\" - rename a property\n- ALTER COLUMN \"Name\" SET <type> - change type/options\n\nSame type syntax as create_database. Key types:\n- SELECT('opt':color, ...) / MULTI_SELECT('opt':color, ...)\n- NUMBER [FORMAT 'dollar'] / FORMULA('expression')\n- RELATION('ds_id') / RELATION('ds_id', DUAL) / RELATION('ds_id', DUAL 'synced_name' 'synced_id')\n- ROLLUP('rel_prop', 'target_prop', 'function') / UNIQUE_ID [PREFIX 'X']\n- Simple: TITLE, RICH_TEXT, DATE, PEOPLE, CHECKBOX, URL, EMAIL, PHONE_NUMBER, STATUS, FILES\n\n<example description=\"Add properties\">{\"data_source_id\": \"f336d0bc-b841-465b-8045-024475c079dd\", \"statements\": \"ADD COLUMN \"Priority\" SELECT('High':red, 'Medium':yellow, 'Low':green); ADD COLUMN \"Due Date\" DATE\"}</example>\n<example description=\"Rename property\">{\"data_source_id\": \"f336d0bc-b841-465b-8045-024475c079dd\", \"statements\": \"RENAME COLUMN \"Status\" TO \"Project Status\"\"}</example>\n<example description=\"Remove property\">{\"data_source_id\": \"f336d0bc-b841-465b-8045-024475c079dd\", \"statements\": \"DROP COLUMN \"Old Property\"\"}</example>\n<example description=\"Add self-relation\">{\"data_source_id\": \"f336d0bc-b841-465b-8045-024475c079dd\", \"statements\": \"ADD COLUMN \"Parent\" RELATION('f336d0bc-b841-465b-8045-024475c079dd', DUAL 'Children' 'children'); ADD COLUMN \"Children\" RELATION('f336d0bc-b841-465b-8045-024475c079dd', DUAL 'Parent' 'parent')\"}</example>\n<example description=\"Update title\">{\"data_source_id\": \"f336d0bc-b841-465b-8045-024475c079dd\", \"title\": \"Project Tracker 2024\"}</example>\n<example description=\"Trash data source\">{\"data_source_id\": \"f336d0bc-b841-465b-8045-024475c079dd\", \"in_trash\": true}</example>\nNotes: Cannot delete/create title properties. Max one unique_id property. Cannot update synced databases. Use \"fetch\" first to see current schema and get the data source ID from <data-source url=\"collection://...\"> tags.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "data_source_id": {
+        "type": "string",
+        "description": "The ID of the data source to update. Can be a data source ID (collection ID, from fetch response's <data-source> tag) or a database ID (only if the database has a single data source). UUID format with or without dashes."
+      },
+      "statements": {
+        "type": "string",
+        "description": "Semicolon-separated SQL DDL statements to update the schema. Supports ADD COLUMN, DROP COLUMN, RENAME COLUMN, ALTER COLUMN SET.\n\nDESTRUCTIVE STATEMENTS REQUIRE EXPLICIT USER CONFIRMATION. These alter the shape of a live database that other people, views, and integrations depend on:\n- DROP COLUMN deletes the property AND all values stored in it across every row. This is not recoverable by re-adding the column.\n- ALTER COLUMN SET can discard data when narrowing a type (e.g. MULTI_SELECT to SELECT, or any type to CHECKBOX) or drop select options that rows currently use.\n- RENAME COLUMN silently breaks formulas, rollups, filters, saved views, and external integrations that reference the old name.\n\nBefore running DROP COLUMN or ALTER COLUMN SET: name the exact column(s), state that stored values will be lost, and get explicit approval. Call \"fetch\" first to show the user the current schema. Never bundle a destructive statement with additive ones in a single call — run ADD COLUMN separately so the user is not approving a deletion inside an unrelated change. Prefer ADD COLUMN plus a manual migration over DROP/ALTER when data must be preserved."
+      },
+      "title": {
+        "type": "string",
+        "description": "The new title of the data source."
+      },
+      "description": {
+        "type": "string",
+        "description": "The new description of the data source."
+      },
+      "is_inline": {
+        "type": "boolean"
+      },
+      "in_trash": {
+        "type": "boolean",
+        "description": "DESTRUCTIVE — REQUIRES EXPLICIT USER CONFIRMATION. Setting to true moves the entire data source, and every page/row it contains, to trash. This is not a per-row delete: all data becomes inaccessible to normal queries at once. Before setting this, state the data source's title and ID to the user, state that all contained pages go to trash with it, and obtain explicit approval. Never set this as part of a larger update, inferred from vague intent, or to 'clean up' without being asked. Recovery requires manual restore from the Notion trash by the user and is subject to Notion's trash retention window."
+      }
+    },
+    "required": [
+      "data_source_id"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}

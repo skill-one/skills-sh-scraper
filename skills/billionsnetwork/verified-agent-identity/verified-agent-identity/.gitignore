@@ -1,0 +1,6 @@
+scripts/node_modules
+.vscode
+.DS_Store
+*.zip
+upload.sh
+.env

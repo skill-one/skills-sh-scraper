@@ -1,0 +1,429 @@
+---
+name: daily-news-brief
+description: 每天早上8点自动搜集并发布国际时事、经济形势、科技发展新闻的skill。基于历史模式和近期国际动向（如特朗普即将访华等），提供专业的新闻简报。
+---
+
+# Daily News Brief Skill
+
+## 概述
+这是一个每天早上8点自动搜集并发布国际时事、经济形势、科技发展新闻的skill。基于历史模式和近期国际动向（如特朗普即将访华等），提供专业的新闻简报。
+
+## 功能特点
+1. **定时执行**：每天早上8点（北京时间）自动运行
+2. **多领域覆盖**：国际时事、经济形势、科技发展
+3. **智能筛选**：基于历史模式和近期动向筛选重要新闻
+4. **格式规范**：统一格式的新闻简报
+5. **多渠道发布**：支持飞书、微信等多种渠道
+
+## 文件结构
+```
+daily-news-brief/
+├── SKILL.md              # 技能说明文档
+├── news-brief.js         # 主脚本文件
+├── config.json           # 配置文件
+├── templates/            # 模板目录
+│   ├── brief-template.md # 简报模板
+│   └── style.css         # 样式文件
+└── history/              # 历史简报存档
+```
+
+## 使用方法
+
+### 1. 安装依赖
+```bash
+cd "C:\Users\User\.openclaw\workspace\skills\daily-news-brief"
+npm install axios cheerio node-cron
+```
+
+### 2. 配置
+编辑 `config.json`：
+```json
+{
+  "newsSources": {
+    "international": [
+      "https://news.cctv.com/world",
+      "https://www.reuters.com/world",
+      "https://www.bbc.com/news/world"
+    ],
+    "economic": [
+      "https://finance.sina.com.cn",
+      "https://www.bloomberg.com/markets",
+      "https://www.ft.com/markets"
+    ],
+    "technology": [
+      "https://tech.sina.com.cn",
+      "https://techcrunch.com",
+      "https://www.theverge.com/tech"
+    ]
+  },
+  "schedule": "0 8 * * *",  // 每天早上8点
+  "timezone": "Asia/Shanghai",
+  "outputChannels": ["feishu", "wechat"],
+  "recipients": ["ou_63fe82c05165ad03801998f88ef81025"],
+  "historicalPatterns": {
+    "trumpVisit": true,
+    "usChinaRelations": true,
+    "middleEastTensions": true,
+    "aiDevelopment": true,
+    "economicPolicies": true
+  }
+}
+```
+
+### 3. 运行
+```bash
+node news-brief.js
+```
+
+### 4. 设置定时任务
+```bash
+# Windows 任务计划程序
+schtasks /create /tn "DailyNewsBrief" /tr "node C:\Users\User\.openclaw\workspace\skills\daily-news-brief\news-brief.js" /sc daily /st 08:00
+```
+
+## 新闻筛选逻辑
+
+### 国际时事优先级
+1. **中美关系**：特朗普访华、贸易谈判、外交互动
+2. **中东局势**：伊朗、以色列、地区冲突
+3. **欧洲动态**：欧盟政策、英国脱欧后续
+4. **亚太地区**：朝鲜半岛、台海局势、南海问题
+5. **全球热点**：气候变化、疫情、国际组织动态
+
+### 经济形势关注点
+1. **宏观经济**：GDP、通胀、就业数据
+2. **货币政策**：美联储、央行利率决策
+3. **贸易投资**：国际贸易、外商投资政策
+4. **产业发展**：新能源、数字经济、制造业
+5. **市场动态**：股市、汇市、大宗商品
+
+### 科技发展重点
+1. **人工智能**：大模型、AI应用、伦理监管
+2. **半导体**：芯片制造、供应链、技术突破
+3. **新能源**：电动汽车、光伏、储能技术
+4. **生物科技**：基因编辑、医疗AI、新药研发
+5. **太空探索**：商业航天、卫星互联网、深空探测
+
+## 简报模板
+
+### 标题格式
+```
+📰 每日新闻简报 | {日期} | {星期}
+```
+
+### 内容结构
+1. **国际时事**（3-5条重要新闻）
+2. **经济形势**（3-5条关键动态）
+3. **科技发展**（3-5条前沿进展）
+4. **今日关注**（重点事件提醒）
+5. **历史回顾**（相关历史事件）
+
+### 输出示例
+```
+📰 每日新闻简报 | 2026年3月4日 | 星期三
+
+🌍 国际时事
+1. 法国宣布"戴高乐"号航母部署地中海应对中东局势
+2. 王毅同以色列外长通电话讨论地区事务
+3. 国际社会聚焦中国两会，关注全球影响
+
+💰 经济形势
+1. 六部门发文支持光伏组件综合利用
+2. 上海加码布局本土算力设施
+3. 黄金白银价格出现大幅波动
+
+🔬 科技发展
+1. 中国AI实现60美元制作电影预告片
+2. 苹果全线上调MacBook售价，转向AI优先战略
+3. 美国在军事行动中使用Anthropic AI模型
+
+👀 今日关注
+• 特朗普访华筹备进展
+• 美联储利率决策会议
+• 全国两会科技创新议题
+
+📚 历史回顾
+• 2025年3月：中美科技合作协议签署
+• 2024年3月：人工智能安全峰会召开
+```
+
+## 高级功能
+
+### 1. 个性化定制
+- 根据用户关注领域调整新闻权重
+- 支持关键词过滤和优先级设置
+- 可配置简报长度和详细程度
+
+### 2. 智能分析
+- 新闻情感分析（正面/负面/中性）
+- 趋势预测和关联分析
+- 历史模式匹配和提醒
+
+### 3. 多渠道适配
+- 飞书卡片格式优化
+- 微信图文消息适配
+- 邮件HTML格式支持
+- 语音播报版本生成
+
+### 4. 数据持久化
+- 每日简报存档
+- 新闻关键词索引
+- 用户阅读统计
+- 反馈收集分析
+
+## 维护和更新
+
+### 定期检查
+1. 新闻源可用性检查（每周）
+2. 模板更新和优化（每月）
+3. 关键词库更新（每季度）
+4. 算法调整和优化（每半年）
+
+### 故障处理
+1. 网络异常重试机制
+2. 源站不可用备用方案
+3. 内容解析失败处理
+4. 发布失败重试逻辑
+
+## 注意事项
+
+### 安全性
+1. 所有外部内容需经过安全过滤
+2. 避免执行不可信代码
+3. 保护用户隐私数据
+4. 遵守内容审核规范
+
+### 合规性
+1. 遵守新闻转载相关规定
+2. 注明新闻来源和出处
+3. 避免传播不实信息
+4. 尊重知识产权
+
+### 性能优化
+1. 控制API调用频率
+2. 缓存新闻内容
+3. 异步处理机制
+4. 内存使用监控
+
+## 扩展计划
+
+### 短期（1-3个月）
+1. 增加更多新闻源
+2. 优化自然语言处理
+3. 添加多语言支持
+4. 完善用户反馈机制
+
+### 中期（3-6个月）
+1. 引入机器学习推荐
+2. 开发移动端应用
+3. 集成日历提醒
+4. 添加语音播报功能
+
+### 长期（6-12个月）
+1. 构建新闻知识图谱
+2. 开发预测分析功能
+3. 建立专家评论系统
+4. 打造新闻社交平台
+
+## 技术支持
+- 问题反馈：通过OpenClaw issue系统
+- 功能建议：提交feature request
+- 紧急支持：联系开发团队
+
+---
+*最后更新：2026年3月4日*
+*版本：1.0.0*
+
+install.sh
+4.0 KB · 19fe75cb386a…
+#!/bin/bash
+
+# 每日新闻简报Skill安装脚本
+# 适用于Linux/macOS系统
+
+set -e
+
+echo "📰 每日新闻简报Skill安装开始..."
+echo "======================================"
+
+# 检查Node.js版本
+echo "🔍 检查Node.js版本..."
+NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
+if [ "$NODE_VERSION" -lt 14 ]; then
+    echo "❌ Node.js版本需要14或更高，当前版本: $(node -v)"
+    echo "请先升级Node.js: https://nodejs.org/"
+    exit 1
+fi
+echo "✅ Node.js版本: $(node -v)"
+
+# 检查npm
+echo "🔍 检查npm..."
+if ! command -v npm &> /dev/null; then
+    echo "❌ npm未安装"
+    exit 1
+fi
+echo "✅ npm版本: $(npm -v)"
+
+# 安装依赖
+echo "📦 安装依赖..."
+cd "$(dirname "$0")"
+npm install
+
+if [ $? -eq 0 ]; then
+    echo "✅ 依赖安装成功"
+else
+    echo "❌ 依赖安装失败"
+    exit 1
+fi
+
+# 创建必要目录
+echo "📁 创建目录..."
+mkdir -p logs history templates
+
+# 设置文件权限
+echo "🔒 设置文件权限..."
+chmod +x news-brief.js
+chmod 644 config.json package.json
+
+# 测试运行
+echo "🧪 测试运行..."
+node news-brief.js --run-now
+
+if [ $? -eq 0 ]; then
+    echo "✅ 测试运行成功"
+else
+    echo "⚠️  测试运行有警告，但继续安装..."
+fi
+
+# 设置定时任务
+echo "⏰ 设置定时任务..."
+read -p "是否设置每天早上8点自动运行? (y/n): " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    # Linux/macOS使用crontab
+    if [[ "$OSTYPE" == "linux-gnu"* ]] || [[ "$OSTYPE" == "darwin"* ]]; then
+        CRON_JOB="0 8 * * * cd $(pwd) && node news-brief.js >> logs/cron.log 2>&1"
+        
+        # 添加到crontab
+        (crontab -l 2>/dev/null | grep -v "news-brief.js"; echo "$CRON_JOB") | crontab -
+        
+        if [ $? -eq 0 ]; then
+            echo "✅ 定时任务设置成功"
+            echo "Cron表达式: 0 8 * * *"
+            echo "工作目录: $(pwd)"
+        else
+            echo "❌ 定时任务设置失败"
+        fi
+    else
+        echo "⚠️  不支持的操作系统，请手动设置定时任务"
+        echo "Cron表达式: 0 8 * * *"
+        echo "命令: cd $(pwd) && node news-brief.js"
+    fi
+else
+    echo "⏸️  跳过定时任务设置"
+fi
+
+# 创建服务文件（可选）
+echo "🛠️  创建systemd服务文件（可选）..."
+read -p "是否创建systemd服务? (y/n): " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]] && [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    SERVICE_FILE="/etc/systemd/system/daily-news-brief.service"
+    
+    cat > daily-news-brief.service << EOF
+[Unit]
+Description=Daily News Brief Service
+After=network.target
+
+[Service]
+Type=simple
+User=$USER
+WorkingDirectory=$(pwd)
+ExecStart=/usr/bin/node $(pwd)/news-brief.js --setup-cron
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    
+    echo "📄 服务文件已创建: daily-news-brief.service"
+    echo "请手动复制到系统目录:"
+    echo "sudo cp daily-news-brief.service $SERVICE_FILE"
+    echo "sudo systemctl daemon-reload"
+    echo "sudo systemctl enable daily-news-brief.service"
+    echo "sudo systemctl start daily-news-brief.service"
+fi
+
+# 安装完成
+echo ""
+echo "======================================"
+echo "🎉 每日新闻简报Skill安装完成！"
+echo ""
+echo "📋 安装摘要:"
+echo "• 工作目录: $(pwd)"
+echo "• 依赖: 已安装"
+echo "• 配置: config.json"
+echo "• 日志: logs/news-brief.log"
+echo "• 历史: history/ 目录"
+echo ""
+echo "🚀 使用方法:"
+echo "1. 编辑 config.json 配置新闻源和发布渠道"
+echo "2. 测试运行: npm test"
+echo "3. 手动运行: node news-brief.js"
+echo "4. 设置定时: npm run setup"
+echo ""
+echo "🔧 配置说明:"
+echo "• 修改新闻源: 编辑 config.json 中的 newsSources"
+echo "• 调整时间: 修改 schedule 字段"
+echo "• 添加渠道: 在 outputChannels 中添加"
+echo "• 设置收件人: 修改 recipients 数组"
+echo ""
+echo "📞 支持:"
+echo "• 查看日志: tail -f logs/news-brief.log"
+echo "• 问题反馈: GitHub Issues"
+echo "• 文档: README.md"
+echo ""
+echo "✨ 祝您使用愉快！"
+
+# 📰 每日新闻简报 | 2026年03月17日 | 星期二
+
+## 🌍 国际时事
+1. **美国总统特朗普计划宣布组建所谓“霍尔木兹联盟”，试图管控霍尔木兹海峡，并施压欧洲、亚洲及海湾国家派军舰参与。但截至目前，多国态度谨慎或明确拒绝，暂无国家公开响应美方呼吁。** [央视](https://news.cctv.com/2026/03/17/ARTImO8rKIljITxwSCqR6zSP260317.shtml)
+2. **多国表示不参与霍尔木兹海峡护航** [央视](https://news.cctv.com/2026/03/17/ARTImO8rKIljITxwSCqR6zSP260317.shtml)
+3. **知情人士称美军对伊朗冲突作战规划已包含“退出选项”** [新浪](https://news.sina.com.cn/w/2026-03-17/doc-inhrfwpy2266585.shtml)
+4. **俄外交部：谴责美以背信弃义 呼吁各方立即停战** [新浪](https://news.sina.com.cn/w/2026-03-17/doc-inhrfwqa9573758.shtml)
+5. **美官员称拦截效果“不如预期”，激烈攻防暴露美军中东反导漏洞** [新浪](https://news.sina.com.cn/w/2026-03-17/doc-inhrfwpz8284127.shtml)
+
+## 💰 经济形势
+1. **新能源汽车上游成本全面传导 行业开启涨价模式** [新浪](https://finance.sina.com.cn/chanjing/2026-03-17/doc-inhrfwqa9558250.shtml)
+2. **宁德时代在山西成立新能源科技公司，注册资本20亿** [新浪](https://finance.sina.com.cn/jjxw/2026-03-16/doc-inhrctqw6091851.shtml)
+3. **多家家电企业跨界“造车” 智能新能源汽车赛道扩容** [新浪](https://finance.sina.com.cn/stock/auto/2026-03-16/doc-inhrcati9212742.shtml)
+4. **黄金交易提醒：中东战火未熄，通胀与避险终极拉锯，多空鏖战5000关口，聚焦美联储决议** [新浪](https://finance.sina.com.cn/money/forex/hbfx/2026-03-17/doc-inhrfwqa9548429.shtml)
+5. **投资心语∣美伊冲突下黄金跌、有色调，这波反常识行情藏着哪些真相？** [新浪](https://finance.sina.com.cn/roll/2026-03-17/doc-inhrfwpw5511233.shtml)
+
+## 🔬 科技发展
+1. **新能源汽车上游成本全面传导 行业开启涨价模式** [新浪](https://finance.sina.com.cn/chanjing/2026-03-17/doc-inhrfwqa9558250.shtml)
+2. **三星在英伟达 GTC 大会上首次展示下一代 AI 芯片 HBM4E** [新浪](https://finance.sina.com.cn/stock/usstock/c/2026-03-17/doc-inhrfwpw5501671.shtml)
+3. **英伟达预计到2027年底AI芯片收入将达到至少1万亿美元** [新浪](https://finance.sina.com.cn/stock/usstock/c/2026-03-17/doc-inhrfshe9637983.shtml)
+4. **3月17日外盘头条：英伟达发布全新神经渲染技术DLSS5 推出太空计算服务 黄仁勋称芯片订单明年将累超万亿美元** [新浪](https://finance.sina.com.cn/stock/usstock/c/2026-03-17/doc-inhrfshc8391337.shtml)
+5. **英伟达推出太空计算服务，将人工智能送入轨道** [新浪](https://finance.sina.com.cn/stock/usstock/c/2026-03-17/doc-inhrfshe9605560.shtml)
+
+## 👀 今日关注
+• 新能源汽车上游成本全面传导 行业开启涨价模式
+• 宁德时代在山西成立新能源科技公司，注册资本20亿
+• 多家家电企业跨界“造车” 智能新能源汽车赛道扩容
+
+## 📚 历史回顾
+• 历史回顾：特朗普上次访华期间签署多项经贸合作协议
+• 历史回顾：中美建交45周年，双边贸易额持续增长
+• 历史回顾：中东和平进程历经多次谈判与冲突
+• 历史回顾：人工智能技术在过去5年实现突破性进展
+• 历史回顾：中国新能源政策推动产业快速发展
+
+---
+*简报生成时间：2026/3/17 08:01:23*
+*数据来源：https://news.cctv.com/world, https://news.sina.com.cn/world, https://www.reuters.com/world, https://www.bbc.com/news/world, https://finance.sina.com.cn, https://www.bloomberg.com/markets, https://www.ft.com/markets, https://www.wsj.com/news/business, https://tech.sina.com.cn, https://techcrunch.com, https://www.theverge.com/tech, https://www.wired.com*
+*注：以上新闻基于公开信息整理，具体细节请以官方发布为准*

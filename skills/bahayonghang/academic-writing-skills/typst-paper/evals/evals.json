@@ -1,0 +1,530 @@
+{
+  "skill_name": "typst-paper",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Compile my Typst paper and tell me whether the layout looks obviously wrong for an IEEE-style submission.",
+      "expected_output": "Route to compile and format modules, run uv-backed Typst checks, and return Typst-oriented comments.",
+      "files": [
+        "evals/fixtures/charged_ieee_fixture.typ"
+      ],
+      "assertions": [
+        {
+          "type": "regex",
+          "pattern": "(compile|format)",
+          "description": "correct modules routed"
+        },
+        {
+          "type": "regex",
+          "pattern": "(typst|Typst)",
+          "description": "Typst-specific handling"
+        },
+        {
+          "type": "regex",
+          "pattern": "// .+\\[Severity:",
+          "description": "Typst comment format used"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Validate the bibliography in main.typ, whether it uses BibTeX or Hayagriva, and point out any missing citations.",
+      "expected_output": "Choose the bibliography module correctly and surface Typst citation/bibliography mismatches.",
+      "files": [
+        "evals/fixtures/charged_ieee_fixture.typ",
+        "evals/fixtures/refs.bib"
+      ],
+      "assertions": [
+        {
+          "type": "contains",
+          "text": "bibliography",
+          "description": "bibliography module routed"
+        },
+        {
+          "type": "regex",
+          "pattern": "(BibTeX|Hayagriva|@cite|#bibliography)",
+          "description": "Typst bib format detected"
+        },
+        {
+          "type": "regex",
+          "pattern": "(missing|unused|unresolved)",
+          "description": "citation issues reported"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Polish the abstract wording in my Typst paper and help me translate one Chinese paragraph into academic English without breaking labels.",
+      "expected_output": "Route to expression and translation modules while preserving Typst syntax.",
+      "files": [
+        "evals/fixtures/charged_ieee_fixture.typ"
+      ],
+      "assertions": [
+        {
+          "type": "regex",
+          "pattern": "(expression|translation)",
+          "description": "correct modules routed"
+        },
+        {
+          "type": "not_contains",
+          "text": "<label-rewritten>",
+          "description": "Typst labels preserved"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "My Typst project uses a Hayagriva YAML bibliography. Validate it, then tell me whether any citations used in the paper are missing or unused.",
+      "expected_output": "Choose the bibliography path correctly for Hayagriva input, preserve Typst citation syntax, and surface missing, unused, or mismatched references.",
+      "files": [
+        "evals/fixtures/bare_fixture.typ",
+        "evals/fixtures/refs.yml"
+      ],
+      "assertions": [
+        {
+          "type": "contains",
+          "text": "bibliography",
+          "description": "bibliography module routed"
+        },
+        {
+          "type": "regex",
+          "pattern": "(Hayagriva|YAML|\\.yml)",
+          "description": "Hayagriva format recognized"
+        },
+        {
+          "type": "regex",
+          "pattern": "(missing|unused|mismatch)",
+          "description": "reference issues reported"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Review the related work section in main.typ for weak literature organization, missing gap derivation, and cross-section logic problems, but do not rewrite labels or math.",
+      "expected_output": "Route to the logic module, flag enumeration-heavy related work or missing gap statements, and keep Typst labels, cites, and math untouched.",
+      "files": [
+        "evals/fixtures/bare_fixture.typ"
+      ],
+      "assertions": [
+        {
+          "type": "contains",
+          "text": "logic",
+          "description": "logic module routed"
+        },
+        {
+          "type": "regex",
+          "pattern": "(gap|enumerat|organization)",
+          "description": "literature quality assessed"
+        },
+        {
+          "type": "not_contains",
+          "text": "@cite-rewritten",
+          "description": "@cite references preserved"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Check whether the introduction in my Typst paper jumps from broad background straight to our method without establishing the bottleneck and prior-work limitations.",
+      "expected_output": "Route to the logic module and flag introduction funnel breaks such as background-to-contribution jumps or missing literature-derived insufficiencies.",
+      "files": [
+        "evals/fixtures/bare_fixture.typ"
+      ],
+      "assertions": [
+        {
+          "type": "contains",
+          "text": "logic",
+          "description": "logic module routed"
+        },
+        {
+          "type": "regex",
+          "pattern": "(funnel|gap|bottleneck|jump)",
+          "description": "funnel analysis present"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Tell me whether the abstract, contribution claims, and conclusion in this Typst paper are aligned, or if they are saying different things.",
+      "expected_output": "Route to the logic module and report cross-section alignment issues involving problem, method, result, and contribution coverage.",
+      "files": [
+        "evals/fixtures/charged_ieee_fixture.typ"
+      ],
+      "assertions": [
+        {
+          "type": "contains",
+          "text": "logic",
+          "description": "logic module routed"
+        },
+        {
+          "type": "regex",
+          "pattern": "(alignment|consistency|cross-section|drift)",
+          "description": "cross-section analysis present"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "My Typst paper is in Chinese. Check the introduction for AI-sounding filler, repeated openings, and low-information paragraphs without breaking labels.",
+      "expected_output": "Route to the deai module with Chinese-aware heuristics and preserve Typst syntax while surfacing filler, parallel openings, and low-information density issues.",
+      "files": [],
+      "assertions": [
+        {
+          "type": "contains",
+          "text": "deai",
+          "description": "deai module routed"
+        },
+        {
+          "type": "regex",
+          "pattern": "(AI.?痕迹|AI.?trace|filler|填充)",
+          "description": "AI pattern detection present"
+        },
+        {
+          "type": "regex",
+          "pattern": "[\\u4e00-\\u9fff]{5,}",
+          "description": "Chinese-aware analysis present"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "Review the discussion section in main.typ and tell me if it is just a data dump without mechanism, comparison, limitations, or implications.",
+      "expected_output": "Route to the experiment module and flag shallow or unlayered discussion structure for a Typst paper.",
+      "files": [
+        "evals/fixtures/charged_ieee_fixture.typ"
+      ],
+      "assertions": [
+        {
+          "type": "contains",
+          "text": "experiment",
+          "description": "experiment module routed"
+        },
+        {
+          "type": "regex",
+          "pattern": "(layer|mechanism|limitation|implication|depth)",
+          "description": "discussion depth assessed"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "Review the algorithm-figure block in my IEEE-style Typst paper and tell me whether the caption, line numbers, and style-algorithm hook are in good shape.",
+      "expected_output": "Route to the pseudocode module, inspect algorithmic usage, and distinguish missing caption or wrapper issues from line-number recommendations.",
+      "files": [
+        "evals/fixtures/charged_ieee_fixture.typ"
+      ],
+      "assertions": [
+        {
+          "type": "contains",
+          "text": "pseudocode",
+          "description": "pseudocode module routed"
+        },
+        {
+          "type": "regex",
+          "pattern": "(algorithm-figure|style-algorithm|caption)",
+          "description": "Typst pseudocode details checked"
+        },
+        {
+          "type": "regex",
+          "pattern": "(recommended|not required|IEEE-like)",
+          "description": "advisory distinction present"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "prompt": "I used lovelace for a custom pseudocode block in main.typ. Tell me whether I still need a figure wrapper and caption for an IEEE-like submission.",
+      "expected_output": "Route to the pseudocode module, identify lovelace usage, and explain when figure wrapping and captions become mandatory for IEEE-like output.",
+      "files": [
+        "evals/fixtures/charged_ieee_fixture.typ"
+      ],
+      "assertions": [
+        {
+          "type": "contains",
+          "text": "pseudocode",
+          "description": "pseudocode module routed"
+        },
+        {
+          "type": "regex",
+          "pattern": "(lovelace|figure|caption)",
+          "description": "lovelace wrapper guidance present"
+        },
+        {
+          "type": "regex",
+          "pattern": "\\[Severity: (Critical|Major|Minor)\\]",
+          "description": "severity format correct"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "prompt": "Rewrite the Related Work in my Typst paper so it sounds like a synthesis instead of a citation list. Keep every @cite anchor and show me the consensus-disagreement-gap chain.",
+      "expected_output": "Route to the literature module, preserve Typst citation anchors, diagnose missing comparison or gap derivation, and provide a rewrite chain from consensus to gap.",
+      "files": [
+        "evals/fixtures/charged_ieee_fixture.typ"
+      ],
+      "assertions": [
+        {
+          "type": "contains",
+          "text": "literature",
+          "description": "literature module routed"
+        },
+        {
+          "type": "regex",
+          "pattern": "(consensus|disagreement|gap|limitation)",
+          "description": "rewrite chain present"
+        },
+        {
+          "type": "not_contains",
+          "text": "@cite-rewritten",
+          "description": "@cite references preserved"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "prompt": "My Typst paper has Chinese and English paragraphs that sound AI-written: 不是 A 而是 B, 真正的问题, The conclusion is:, essentially. Reduce the AI tone but keep @cite anchors, <labels>, math, and macros unchanged.",
+      "expected_output": "Route to deai, diagnose Chinese and English structure shells, extract the academic payload first, and provide source-preserving revision targets without rewriting Typst syntax.",
+      "files": [
+        "evals/fixtures/charged_ieee_fixture.typ"
+      ],
+      "assertions": [
+        {
+          "type": "contains",
+          "text": "deai",
+          "description": "deai module routed"
+        },
+        {
+          "type": "regex",
+          "pattern": "(structure shell|二元对比|fake insight|伪洞察|lecture)",
+          "description": "bilingual shell categories diagnosed"
+        },
+        {
+          "type": "regex",
+          "pattern": "(@cite|<labels?>|math|macros|Typst)",
+          "description": "Typst syntax preservation stated"
+        },
+        {
+          "type": "not_contains",
+          "text": "guarantee detector",
+          "description": "no detector-evasion promise"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "prompt": "In my Typst Results section the sentences are present tense (@fig-loss shows, the method outperforms) and over-claim (caused by, for the first time, universally). Flag the tense and over-claim issues but keep @cite anchors, <labels>, math, and macros unchanged.",
+      "expected_output": "Route to deai, flag present-tense reporting verbs in Results (figure/table subjects exempt) and the causal / firstness / universality over-claims, and provide source-preserving targets without rewriting Typst syntax.",
+      "files": [
+        "evals/fixtures/charged_ieee_fixture.typ"
+      ],
+      "assertions": [
+        {
+          "type": "contains",
+          "text": "deai",
+          "description": "deai module routed"
+        },
+        {
+          "type": "regex",
+          "pattern": "(tense|past tense|present-tense)",
+          "description": "tense issue diagnosed"
+        },
+        {
+          "type": "regex",
+          "pattern": "(over[- ]?claim|causal|first time|universal)",
+          "description": "over-claim issue diagnosed"
+        },
+        {
+          "type": "regex",
+          "pattern": "(@cite|<labels?>|math|macros|Typst)",
+          "description": "Typst syntax preservation stated"
+        },
+        {
+          "type": "not_contains",
+          "text": "guarantee detector",
+          "description": "no detector-evasion promise"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "prompt": "Review the five labeled Discussion cases in this Typst fixture for AI tone and claim-evidence calibration. Flag only the defensive speculative explanation, explain the per-mechanism evidence gap, and state why Cases B-E are legitimate boundaries. Preserve Typst syntax and do not invent evidence.",
+      "expected_output": "Route to deai with Typst Discussion evidence review: identify Case A as a defensive speculative explanation, require evidence anchors or discriminating tests for retained mechanisms, use undetermined when unsupported, and preserve the four evidence-calibrated boundary cases.",
+      "files": [
+        "evals/fixtures/defensive_speculative_explanation.typ"
+      ],
+      "assertions": [
+        {
+          "type": "contains",
+          "text": "defensive speculative explanation",
+          "description": "target composite pattern named"
+        },
+        {
+          "type": "regex",
+          "pattern": "(per-mechanism|evidence anchor|discriminating test)",
+          "description": "mechanisms require local evidence mapping"
+        },
+        {
+          "type": "regex",
+          "pattern": "(undetermined|cannot determine|mechanism remains unknown)",
+          "description": "unsupported attribution falls back to honest uncertainty"
+        },
+        {
+          "type": "contains",
+          "text": "Case B",
+          "description": "single anchored hedge remains a non-finding"
+        },
+        {
+          "type": "contains",
+          "text": "Case C",
+          "description": "evidenced alternatives remain a non-finding"
+        },
+        {
+          "type": "contains",
+          "text": "Case D",
+          "description": "honest unknown remains a non-finding"
+        },
+        {
+          "type": "contains",
+          "text": "Case E",
+          "description": "controlled strong claim remains a non-finding"
+        },
+        {
+          "type": "regex",
+          "pattern": "(controlled|ablation|earned|strong claim)",
+          "description": "evidence-earned strong wording is preserved"
+        },
+        {
+          "type": "regex",
+          "pattern": "(Typst|\\.typ|syntax)",
+          "description": "Typst surface remains explicit"
+        },
+        {
+          "type": "not_contains",
+          "text": "p = 0.01",
+          "description": "no unsupported significance evidence is invented"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "prompt": "Review all eight labeled Typst cases and route to deai. Treat Case A as the combined H-ING, H-PROMO, H-ATTR, H-SCOPE, and H-OUTLOOK positive; Case B as H-PRED; and Case C as H-TERM. Explain why Case D, Case E, Case F, Case G, and Case H are evidence-sufficient boundaries. Default to findings or a blueprint. If replacement prose is explicitly requested, run a fidelity audit and report Changed:, Protected:, Meaning-Check:, and Risk-Flags:. Deduplicate H-OUTLOOK against defensive speculative explanation findings. Preserve @cite, <label>, math, code, and Typst functions; never infer AI authorship or invent evidence.",
+      "expected_output": "Route to deai; identify the seven claim-local H-* clusters only in Cases A-C; keep Cases D-H as non-findings because their metrics, citations, scope, technical relations, defined terminology, limitation, and future test earn the wording. Do not claim AI authorship. When prose is requested, use audit -> rewrite -> fidelity audit and return Changed:, Protected:, Meaning-Check:, and Risk-Flags: while preserving claims, @cite, <label>, math, code, terminology, certainty, and scope. Merge a shared H-OUTLOOK/defensive-rhetoric root cause into one evidence-calibration finding and do not invent missing support.",
+      "files": [
+        "evals/fixtures/anti_ai_pattern_clusters.typ"
+      ],
+      "assertions": [
+        {
+          "type": "contains",
+          "text": "deai",
+          "description": "deai module routed"
+        },
+        {
+          "type": "contains",
+          "text": "H-ING",
+          "description": "H-ING is classified explicitly"
+        },
+        {
+          "type": "contains",
+          "text": "H-PROMO",
+          "description": "H-PROMO is classified explicitly"
+        },
+        {
+          "type": "contains",
+          "text": "H-ATTR",
+          "description": "H-ATTR is classified explicitly"
+        },
+        {
+          "type": "contains",
+          "text": "H-PRED",
+          "description": "H-PRED is classified explicitly"
+        },
+        {
+          "type": "contains",
+          "text": "H-TERM",
+          "description": "H-TERM is classified explicitly"
+        },
+        {
+          "type": "contains",
+          "text": "H-SCOPE",
+          "description": "H-SCOPE is classified explicitly"
+        },
+        {
+          "type": "contains",
+          "text": "H-OUTLOOK",
+          "description": "H-OUTLOOK is classified explicitly"
+        },
+        {
+          "type": "contains",
+          "text": "Case A",
+          "description": "Case A boundary is addressed"
+        },
+        {
+          "type": "contains",
+          "text": "Case B",
+          "description": "Case B boundary is addressed"
+        },
+        {
+          "type": "contains",
+          "text": "Case C",
+          "description": "Case C boundary is addressed"
+        },
+        {
+          "type": "contains",
+          "text": "Case D",
+          "description": "Case D boundary is addressed"
+        },
+        {
+          "type": "contains",
+          "text": "Case E",
+          "description": "Case E boundary is addressed"
+        },
+        {
+          "type": "contains",
+          "text": "Case F",
+          "description": "Case F boundary is addressed"
+        },
+        {
+          "type": "contains",
+          "text": "Case G",
+          "description": "Case G boundary is addressed"
+        },
+        {
+          "type": "contains",
+          "text": "Case H",
+          "description": "Case H boundary is addressed"
+        },
+        {
+          "type": "regex",
+          "pattern": "(Changed:|Protected:|Meaning-Check:|Risk-Flags:)",
+          "description": "fidelity proposal fields are retained"
+        },
+        {
+          "type": "regex",
+          "pattern": "(fidelity audit|claim|citation|scope|certainty)",
+          "description": "academic payload is audited after an explicit rewrite"
+        },
+        {
+          "type": "regex",
+          "pattern": "(deduplicate|one finding|evidence calibration|primary)",
+          "description": "overlapping outlook and defensive findings are merged"
+        },
+        {
+          "type": "regex",
+          "pattern": "(@cite|<label>|math|code|Typst)",
+          "description": "Typst syntax and evidence anchors are protected"
+        },
+        {
+          "type": "not_contains",
+          "text": "AI-generated",
+          "description": "no AI-authorship classification is made"
+        },
+        {
+          "type": "not_contains",
+          "text": "p = 0.01",
+          "description": "no unsupported evidence is invented"
+        }
+      ]
+    }
+  ]
+}

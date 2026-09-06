@@ -1,0 +1,219 @@
+# Make Routing Reference
+
+> **Safety:** All write operations (POST, PUT, PATCH, DELETE) require explicit user confirmation before execution. Verify the target resource and intended effect with the user first. See the main [SKILL.md](../SKILL.md#security--permissions) for full security policy.
+
+**App name:** `make`
+**Base URL proxied:** `{zone}.make.com` (e.g., `us1.make.com`, `eu1.make.com`)
+
+## API Path Pattern
+
+```
+/make/api/v2/{resource}
+```
+
+## Common Endpoints
+
+### Users
+
+#### Get Current User
+```bash
+maton api '/make/api/v2/users/me'
+```
+
+#### List Users
+```bash
+maton api '/make/api/v2/users?organizationId={organizationId}'
+maton api '/make/api/v2/users?teamId={teamId}'
+```
+
+### Organizations
+
+#### List Organizations
+```bash
+maton api '/make/api/v2/organizations'
+```
+
+#### Get Organization
+```bash
+maton api '/make/api/v2/organizations/{organizationId}'
+```
+
+#### Create Organization
+```bash
+maton api -X POST '/make/api/v2/organizations' \
+  -H 'Content-Type: application/json' \
+  --input - <<'EOF'
+{
+  "name": "Organization Name",
+  "regionId": 2,
+  "timezoneId": 301,
+  "countryId": 202
+}
+EOF
+```
+
+#### Get Organization Usage
+```bash
+maton api '/make/api/v2/organizations/{organizationId}/usage'
+```
+
+### Teams
+
+#### List Teams
+```bash
+maton api '/make/api/v2/teams?organizationId={organizationId}'
+```
+
+#### Get Team
+```bash
+maton api '/make/api/v2/teams/{teamId}'
+```
+
+#### Create Team
+```bash
+maton api -X POST '/make/api/v2/teams' \
+  -H 'Content-Type: application/json' \
+  --input - <<'EOF'
+{
+  "name": "Team Name",
+  "organizationId": 123456
+}
+EOF
+```
+
+### Scenarios
+
+#### List Scenarios
+```bash
+maton api '/make/api/v2/scenarios?organizationId={organizationId}'
+maton api '/make/api/v2/scenarios?teamId={teamId}'
+```
+
+#### Get Scenario
+```bash
+maton api '/make/api/v2/scenarios/{scenarioId}'
+```
+
+#### Create Scenario
+```bash
+maton api -X POST '/make/api/v2/scenarios' \
+  -H 'Content-Type: application/json' \
+  --input - <<'EOF'
+{
+  "teamId": 123456,
+  "name": "Scenario Name",
+  "blueprint": "{...}"
+}
+EOF
+```
+
+#### Start/Stop Scenario
+```bash
+maton api -X POST '/make/api/v2/scenarios/{scenarioId}/start'
+maton api -X POST '/make/api/v2/scenarios/{scenarioId}/stop'
+```
+
+#### Run Scenario
+```bash
+maton api -X POST '/make/api/v2/scenarios/{scenarioId}/run'
+```
+
+#### Get Scenario Logs
+```bash
+maton api '/make/api/v2/scenarios/{scenarioId}/logs'
+```
+
+### Connections (App Connections)
+
+#### List Connections
+```bash
+maton api '/make/api/v2/connections?teamId={teamId}'
+```
+
+#### Test Connection
+```bash
+maton api -X POST '/make/api/v2/connections/{connectionId}/test'
+```
+
+### Data Stores
+
+#### List Data Stores
+```bash
+maton api '/make/api/v2/data-stores?teamId={teamId}'
+```
+
+#### Get Data Store
+```bash
+maton api '/make/api/v2/data-stores/{dataStoreId}'
+```
+
+### Hooks (Webhooks)
+
+#### List Hooks
+```bash
+maton api '/make/api/v2/hooks?teamId={teamId}'
+```
+
+#### Enable/Disable Hook
+```bash
+maton api -X POST '/make/api/v2/hooks/{hookId}/enable'
+maton api -X POST '/make/api/v2/hooks/{hookId}/disable'
+```
+
+### Templates
+
+#### List Templates
+```bash
+maton api '/make/api/v2/templates?teamId={teamId}'
+```
+
+#### Get Template Blueprint
+```bash
+maton api '/make/api/v2/templates/{templateId}/blueprint'
+```
+
+### Incomplete Executions (DLQs)
+
+#### List Incomplete Executions
+```bash
+maton api '/make/api/v2/dlqs?scenarioId={scenarioId}'
+```
+
+#### Retry Incomplete Execution
+```bash
+maton api -X POST '/make/api/v2/dlqs/{dlqId}/retry'
+```
+
+## Pagination
+
+Offset-based pagination using `pg` parameters:
+
+```bash
+maton api '/make/api/v2/scenarios?organizationId=123&pg[offset]=0&pg[limit]=50'
+```
+
+Response includes:
+```json
+{
+  "scenarios": [...],
+  "pg": {
+    "sortBy": "name",
+    "limit": 500,
+    "sortDir": "asc",
+    "offset": 0
+  }
+}
+```
+
+## Notes
+
+- Most list endpoints require either `organizationId` or `teamId`
+- Make uses zone-specific URLs - gateway routes automatically based on connection
+- Zone URLs: `us1.make.com`, `us2.make.com`, `eu1.make.com`, `eu2.make.com`
+- All IDs are integers
+- Timestamps use ISO 8601 format
+
+## Resources
+
+- [Make API Documentation](https://developers.make.com/api-documentation)
+- [Make API Reference](https://developers.make.com/api-documentation/api-reference)

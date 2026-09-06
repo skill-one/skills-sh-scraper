@@ -1,0 +1,15 @@
+{
+  "startedAt": "2026-09-06T09:34:07.938Z",
+  "finishedAt": "2026-09-06T09:51:04.125Z",
+  "limit": null,
+  "audits": false,
+  "leaderboardTotal": 9717,
+  "indexedRows": 9624,
+  "changed": 561,
+  "added": 545,
+  "removed": 1,
+  "dropped": 93,
+  "failed": 0,
+  "carriedOver": 0,
+  "failedIds": []
+}

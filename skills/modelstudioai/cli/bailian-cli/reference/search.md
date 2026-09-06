@@ -1,0 +1,53 @@
+# `bl search` commands
+
+> Auto-generated from `packages/cli/src/commands.ts`. Do not edit by hand.
+> Regenerate: `pnpm --filter bailian-cli run generate:reference`.
+
+> **Agent routing (mandatory):** Before running any `bl search *` command, Read skill `bailian-web-search` if installed and follow its identity-based routing (Token Plan → model-native web search; default → MCP; eligible MCP failures → fall back once). Do **not** call `bl search web` directly from this reference alone — Token Plan keys cannot authorize Bailian MCP search. If that skill is missing, run `bl skill init` or fall back to `bl search web --help` / `bl text chat --help` after checking `bl config show --output json`.
+
+Index: [index.md](index.md)
+
+## Commands in this group
+
+| Command         | Authentication | Description                                          |
+| --------------- | -------------- | ---------------------------------------------------- |
+| `bl search web` | API Key        | Search the web using DashScope MCP WebSearch service |
+
+## Command details
+
+### `bl search web`
+
+| Field              | Value                                                |
+| ------------------ | ---------------------------------------------------- |
+| **Name**           | `search web`                                         |
+| **Description**    | Search the web using DashScope MCP WebSearch service |
+| **Authentication** | API Key                                              |
+| **Usage**          | `bl search web --query <text> [flags]`               |
+
+#### Flags
+
+| Flag               | Type   | Required | Description                            |
+| ------------------ | ------ | -------- | -------------------------------------- |
+| `--query <text>`   | string | no       | Search query text                      |
+| `--count <n>`      | number | no       | Number of search results (default: 10) |
+| `--list-tools`     | switch | no       | List available MCP tools and exit      |
+| `--api-key <key>`  | string | no       | API key                                |
+| `--base-url <url>` | string | no       | API base URL                           |
+
+#### Examples
+
+```bash
+bl search web --query "Alibaba Cloud Bailian latest features"
+```
+
+```bash
+bl search web --query "TypeScript 5.9 new features" --count 5
+```
+
+```bash
+bl search web --query "Today's news"
+```
+
+```bash
+bl search web --list-tools
+```

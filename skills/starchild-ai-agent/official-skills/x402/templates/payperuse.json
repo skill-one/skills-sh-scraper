@@ -1,0 +1,20 @@
+{
+  "_comment": "Pay-per-use template: each call is paid individually, no account. Suited to low-frequency / high-value calls (AI inference, report generation, data queries).",
+  "_comment_facilitator": "Default: platform facilitator (settler maintained by the platform, no local gas). Override via X402_FACILITATOR_URL for a custom facilitator.",
+  "mode": "payperuse",
+  "upstream": "http://127.0.0.1:UPSTREAM_PORT",
+  "pay_to": "YOUR_WALLET_ADDRESS",
+  "networks_mode": "all",
+  "facilitator": "https://starchild-x402-facilitator.fly.dev",
+  "port": 8402,
+  "routes": {
+    "GET /api/premium": {
+      "price": "$0.05",
+      "description": "premium data"
+    },
+    "POST /api/generate": {
+      "price": "$0.25",
+      "description": "generation job"
+    }
+  }
+}
