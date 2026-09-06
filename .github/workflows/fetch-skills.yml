@@ -46,6 +46,18 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
+      # Seed the scraper with the previous snapshot: the upstream hashes in
+      # its skills.jsonl pin fetchedAt, reuse unchanged audit results, keep
+      # the last good content of failed fetches, and make the changed/added/
+      # removed counters describe this run instead of the empty workspace.
+      # No-op on the very first run (no dist branch yet).
+      - name: Restore previous snapshot
+        run: |
+          if git fetch -q origin dist; then
+            mkdir -p data
+            git archive origin/dist -- skills skills.jsonl stats.json | tar -x -C data
+          fi
+
       - name: Scrape all skills
         run: node scraper.mjs
 
