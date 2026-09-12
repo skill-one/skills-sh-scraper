@@ -1,10 +1,10 @@
 ---
 name: shopify-onboarding-dev
-description: "Get started building on Shopify. Use when a developer asks to build an app, build a theme, create a dev store, set up a partner account, scaffold a project, or get started developing for Shopify. NOT for merchants managing stores."
+description: "Get started building on Shopify. Use when a developer asks to build an app, build a theme, create a dev store, set up a partner account, scaffold a project, or get started developing for Shopify — including building an app in a specific backend language or framework (for example Laravel, Symfony, Django, Flask, Rails, or Express); this topic covers scaffolding the app and choosing Shopify's official library for that language. When the prompt also involves an extension surface (checkout, admin, POS, customer accounts), learn this topic **in addition to** the surface topic. NOT for merchants managing stores."
 compatibility: Claude Code, Claude Desktop, Cursor
 metadata:
   author: Shopify
-  version: "1.13.0"
+  version: "1.14.1"
 hooks:
   PostToolUse:
     - matcher: Skill
@@ -97,6 +97,18 @@ API-specific skill (e.g. `shopify-admin`, `shopify-liquid`,
 `shopify-functions`). Do not duplicate their routing logic.
 
 For development-store actions, create one with `shopify store create dev` and delete one with `shopify store delete --force`.
+
+### Official backend libraries
+
+Use official libraries for authenticating backend requests:
+
+- Node.js: `@shopify/shopify-app-react-router` (recommended), `@shopify/shopify-app-remix`, or `@shopify/shopify-app-express`
+- Ruby: `shopify_app` for Rails or `shopify_api` without Rails
+- PHP (Laravel or any framework): `shopify-app-php`
+- Python (Django or any framework): `shopify-app-python`
+
+The full list of official libraries and app templates lives at
+[shopify.dev/docs/api/libraries-and-templates](https://shopify.dev/docs/api/libraries-and-templates).
 
 ## Behavioral rules
 

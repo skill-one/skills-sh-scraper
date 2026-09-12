@@ -62,6 +62,9 @@ the review's work-queue pass cheap once hundreds of observations exist:
 d="[ABSOLUTE PATH]/skill-observations/observation-log"   # the pinned workspace path — re-derive in EVERY call, never relative to the cwd
 n=$(find "[ABSOLUTE PATH]/skill-observations/observation-log" -maxdepth 1 -name '*.md' | wc -l | tr -d ' ')  # literal path: independent of $d
 parsed=$(find "$d" -maxdepth 1 -name '*.md' -exec awk 'FNR==1 {if (/^---[[:space:]]*$/) print FILENAME; nextfile}' {} + | wc -l | tr -d ' ')
+suspect=$(find "$d" -maxdepth 1 -name '*.md' -exec awk 'FNR==1 && /^---[[:space:]]*$/ {fm=1; next}
+  fm && /^---[[:space:]]*$/ {fm=0; nextfile}
+  fm && /^[a-z_]+: [^"\047[|>].*: / {print FILENAME; nextfile}' {} + | wc -l | tr -d ' ')   # values with an unquoted ": " — invalid YAML
 for f in $(find "$d" -maxdepth 1 -name '*.md' | sort); do
   awk 'NR==1 && /^---[[:space:]]*$/ {fm=1; next}
        fm && /^---[[:space:]]*$/ {exit}
@@ -71,6 +74,8 @@ done
 if [ "$n" -gt 0 ] && [ "$parsed" -eq 0 ]; then
   echo "SCAN COMMAND BROKEN — $n files present, 0 headers parsed"; exit 1
 fi
+[ "$suspect" -gt 0 ] && echo "NOTE: $suspect of $n headers carry an unquoted ': ' in a value — quote those values (File format)"
+printf 'files: %s  parsed: %s  suspect: %s\n' "$n" "$parsed" "$suspect"
 ```
 
 **Guard the read, not just the write.** A query that returns nothing is
@@ -131,12 +136,35 @@ expressible. The mechanism exists; the *check* does not — and a list field
 with no rule to populate it collapses to a single value. Four parts, in
 increasing cost:
 
-**1. Declare the families —** `skill-observations/skill-families.md`. One
-entry per family, with the members, and the load-bearing second column:
+**1. Declare the families and the pattern groups —**
+`skill-observations/skill-families.md`. The registry holds two kinds of
+grouping, and conflating them is what makes it either block publication
+or ship references nobody can use:
+
+| Kind | Defined by | Members may cross-reference? | Shared rules live |
+|---|---|---|---|
+| **Family** | the same tool, or a core skill and its companions | yes — a user of one has reason to load the others | in the members (per the coherence model) |
+| **Pattern group** | the same shape — one companion per tool, one dossier per subject — with no reason for a user of one to have another | **never** — a sibling paragraph naming the others is a defect, published or not | in cross-cutting principles |
+
+Group skills by what a user of one would also need, not by what they
+look alike. Propagation of insights and cross-referencing are different
+relationships: a pattern group earns the sibling check at write time
+(the "could this sentence survive removing the tool name?" test is
+exactly what such a group is good for) and earns no cross-references at
+all. A family earns both.
+
+**A skill can belong to more than one grouping** — typically a per-tool
+family and a core/companion family at once — and the registry records
+each membership separately rather than forcing a single home. The
+sibling check (part 2) runs against **every** family and every pattern
+group the target belongs to, not just the first one it resolves to.
+
+Each entry carries the members and the load-bearing second column:
 **what is shared versus what is legitimately member-specific.** Without
 that column every observation looks like it might apply everywhere and the
-check generates noise instead of signal. Record each family's *coherence
-model* too, because it decides what "fixing drift" means:
+check generates noise instead of signal. Record the *coherence model* for
+each FAMILY too, because it decides what "fixing drift" means (a pattern
+group has no coherence model — there is no shared text to keep in sync):
 
 | Coherence model | Meaning | Fixing drift means |
 |---|---|---|
@@ -144,9 +172,10 @@ model* too, because it decides what "fixing drift" means:
 | `shared-core` | one skill holds the common material; the others load it as a companion | edit the core once, check the pointers |
 
 ```markdown
-## [family name]
+## [group name]
+**Kind:** family | pattern group
 **Members:** skill-a, skill-b, skill-c
-**Coherence model:** synced-duplicates | shared-core
+**Coherence model:** synced-duplicates | shared-core   # families only
 **Shared:** [the material every member should carry]
 **Member-specific:** [what legitimately differs, and why]
 ```
@@ -155,9 +184,13 @@ Duplication is sometimes correct and absence is not always drift — that is
 exactly what the shared/member-specific split records.
 
 **2. Logging-time check** (SKILL.md, "How to Log"). Before writing an
-observation, resolve the target against the registry. If it belongs to a
-family, evaluate each sibling and either add it to `skill:` or state in the
-body why it does not apply. **No registry yet, or the target is not in
+observation, resolve the target against the registry — against every
+family and every pattern group it appears in, since membership is
+plural. For each sibling in each of them, either add it to `skill:` or
+state in the body why it does not apply. Where the insight is shared
+across a PATTERN group, the destination is usually a cross-cutting
+principle rather than the same paragraph copied into each member.
+**No registry yet, or the target is not in
 it?** The check is still required: scan the installed skill names for a
 shared prefix, suffix or subject (`*-extras` companions, per-tool
 implementations of one method, per-subject dossiers), do the evaluation

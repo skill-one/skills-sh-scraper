@@ -1,5 +1,7 @@
 # Starter Cross-Cutting Principles (optional seed)
 
+Starter set version: 2
+
 This file is NOT the adopter's principles file. It is an optional seed:
 a curated set of generic methodology principles, accumulated over a long
 run of the task-observer loop and stripped of their provenance
@@ -8,10 +10,17 @@ The live file is `[workspace folder]/skill-observations/cross-cutting-principles
 and its authority comes from the adopter's own evidence trail — so nothing
 here takes effect until the adopter consciously imports it.
 
-**When to read this file:** only at first run, when the Session Start
-Protocol (SKILL.md, step 1) is creating the principles file and offers the
-choice "start empty, or seed from the starter set". Never read it once the
-adopter's own file exists.
+**When to read this file:** only when the Session Start Protocol
+(SKILL.md, step 1) finds the starter-set reconciliation due — the marker
+`skill-observations/starter-principles-reviewed.txt` is absent, or holds
+a version lower than the `Starter set version` line above. That is true
+on a fresh install, on an existing install's first session after
+upgrading to a bundle that ships this file, and again whenever a later
+version grows the set. Never read it on an ordinary session start. The
+reconciliation compares by substance, not title: an adopter who already
+carries a rule under their own wording is covered, and only the uncovered
+entries are offered. Bump the version line whenever entries are added or
+materially changed, or existing installs never see the change.
 
 **How to import:** copy the entries the adopter chooses (all, or a subset)
 into the live file in the template format from `references/skill-authoring.md`,
@@ -294,3 +303,41 @@ supporting reason transfers its unreliability to the sound claim beside
 it. Corollary: before building an argument on figures from a document,
 establish who authored them — inherited or third-party numbers deviate in
 both directions and change which of them are worth contesting at all.
+
+### 26. A companion skill must declare its coverage boundary
+**Applies to:** all skills that document a surface someone else owns — a
+tool, an MCP server, an API, a platform, a product — and any skill loaded
+as a companion to a base skill
+**Requirement:** State near the top which parts of the documented surface
+the skill covers and which it does not. A companion is loaded precisely
+because the agent does not know the tool, so the file's silence about a
+surface is read as the surface not existing rather than as the file being
+partial — and the load itself suppresses the exploration that would settle
+the difference. Name the uncovered areas explicitly, even as a bare list
+with no detail behind it; a named gap is a question the agent knows to
+ask, an unnamed one is not. Read in the other direction: an existing
+companion that declares no boundary has UNKNOWN coverage, not complete
+coverage, so verify against the product before concluding a feature is
+absent. Marking individual tools or endpoints as exercised versus
+unexercised (see "Documenting an external tool surface" in
+`references/skill-authoring.md`) does not substitute for this: no marking
+scheme can describe a surface the file never mentions, and a skill can be
+accurate on every line it contains while accounting for roughly half of
+what the tool does.
+
+### 27. Every skill ships as a bundle and is structured for progressive disclosure, regardless of size
+**Applies to:** all skills, open-source and internal
+**Requirement:** A skill is a directory, delivered and installed as one
+bundle, whether it currently holds one file or twenty — there is no
+single-file delivery format. Its structure follows progressive disclosure
+from the first draft: SKILL.md carries the mental model, the rules that
+change behaviour on every invocation, and a pointer list with explicit
+load triggers; everything consulted only during one kind of episode (tool
+inventories, recipes, taxonomies, per-variant detail, gotcha catalogues,
+contract or clause extracts) lives in `references/`. A line-count
+threshold (around 500 lines) marks only the point at which an existing,
+not-yet-split skill gets retrofitted; it does not gate the structure of
+new or substantially revised work. Rationale: a rule that switches on
+artefact size creates two formats for one thing and a boundary every
+consumer must re-derive, and one format removes the bare-SKILL.md
+truncation class of install failures outright.

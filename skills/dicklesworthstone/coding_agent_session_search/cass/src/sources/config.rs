@@ -1389,9 +1389,10 @@ impl SourcesConfig {
 
         // Create backup if file exists
         let backup_path = if config_path.exists() {
-            let backup = unique_backup_path(&config_path);
-            std::fs::copy(&config_path, &backup)?;
-            Some(backup)
+            Some(copy_sources_config_backup(
+                &config_path,
+                unique_backup_path,
+            )?)
         } else {
             None
         };
@@ -1597,6 +1598,42 @@ fn write_sources_config_temp_file_at(path: &Path, contents: &[u8]) -> Result<(),
     file.sync_all()
 }
 
+fn copy_sources_config_backup(
+    source_path: &Path,
+    mut next_path: impl FnMut(&Path) -> PathBuf,
+) -> Result<PathBuf, std::io::Error> {
+    let mut source = std::fs::File::open(source_path)?;
+    let permissions = source.metadata()?.permissions();
+    for _ in 0..100 {
+        let backup_path = next_path(source_path);
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            // Do not expose config contents while copying a private source.
+            options.mode(0o600);
+        }
+        let mut backup = match options.open(&backup_path) {
+            Ok(file) => file,
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(err) => return Err(err),
+        };
+        std::io::copy(&mut source, &mut backup)?;
+        backup.set_permissions(permissions)?;
+        backup.sync_all()?;
+        sync_parent_directory(&backup_path)?;
+        return Ok(backup_path);
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::AlreadyExists,
+        format!(
+            "failed to allocate unique sources config backup path for {}",
+            source_path.display()
+        ),
+    ))
+}
+
 fn unique_backup_path(path: &Path) -> PathBuf {
     static NEXT_NONCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
@@ -1725,6 +1762,102 @@ mod tests {
         assert_ne!(first, second);
         assert_eq!(first.parent(), final_path.parent());
         assert_eq!(second.parent(), final_path.parent());
+    }
+
+    #[test]
+    fn test_sources_config_backup_retries_collision_and_preserves_files() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("sources.toml");
+        let occupied = temp.path().join("occupied.backup");
+        let fresh = temp.path().join("fresh.backup");
+        let contents = vec![b'x'; 131_079];
+        std::fs::write(&source, &contents).expect("write source");
+        std::fs::write(&occupied, b"existing backup").expect("write occupied backup");
+        let mut attempts = 0;
+        let backup = copy_sources_config_backup(&source, |_| {
+            attempts += 1;
+            if attempts == 1 {
+                occupied.clone()
+            } else {
+                fresh.clone()
+            }
+        })
+        .expect("retry collision and copy source");
+        assert_eq!(attempts, 2);
+        assert_eq!(backup, fresh);
+        assert_eq!(std::fs::read(&backup).expect("read backup"), contents);
+        assert_eq!(std::fs::read(&source).expect("read source"), contents);
+        assert_eq!(
+            std::fs::read(&occupied).expect("read occupied backup"),
+            b"existing backup"
+        );
+
+        let mut attempts = 0;
+        let err = copy_sources_config_backup(&source, |_| {
+            attempts += 1;
+            occupied.clone()
+        })
+        .expect_err("persistent collisions must fail after bounded retries");
+        assert_eq!(attempts, 100);
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(&source).expect("read source"), contents);
+        assert_eq!(
+            std::fs::read(&occupied).expect("read occupied backup"),
+            b"existing backup"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_sources_config_backup_retries_symlink_without_touching_target() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("sources.toml");
+        let protected = temp.path().join("protected.toml");
+        let occupied = temp.path().join("occupied.backup");
+        let fresh = temp.path().join("fresh.backup");
+        std::fs::write(&source, b"source config").expect("write source");
+        std::fs::set_permissions(&source, std::fs::Permissions::from_mode(0o600))
+            .expect("set source permissions");
+        std::fs::write(&protected, b"protected config").expect("write protected file");
+        symlink(&protected, &occupied).expect("create occupied symlink");
+        let mut attempts = 0;
+        let backup = copy_sources_config_backup(&source, |_| {
+            attempts += 1;
+            if attempts == 1 {
+                occupied.clone()
+            } else {
+                fresh.clone()
+            }
+        })
+        .expect("retry symlink collision");
+        assert_eq!(attempts, 2);
+        assert_eq!(backup, fresh);
+        assert_eq!(
+            std::fs::read(&backup).expect("read backup"),
+            b"source config"
+        );
+        assert_eq!(
+            std::fs::read(&source).expect("read source"),
+            b"source config"
+        );
+        assert_eq!(
+            std::fs::read(&protected).expect("read protected file"),
+            b"protected config"
+        );
+        assert_eq!(
+            std::fs::read_link(&occupied).expect("read symlink"),
+            protected
+        );
+        assert_eq!(
+            std::fs::metadata(&backup)
+                .expect("backup metadata")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
     }
 
     #[cfg(unix)]
@@ -2659,6 +2792,33 @@ Host production !legacy-prod
         let source = generator.generate_source("laptop", &report);
         assert_eq!(source.paths, vec!["~/.grok/sessions", "~/.codex/sessions"]);
         assert_eq!(source.source_type, SourceKind::Ssh);
+    }
+
+    #[test]
+    fn remote_autoconfig_rejects_muse_credentials_but_keeps_sessions() {
+        let generator = SourceConfigGenerator::new();
+        let report = make_test_probe(
+            true,
+            vec![
+                make_test_agent("muse", "~/.config/muse/auth.json"),
+                make_test_agent("muse", "~/.config/muse"),
+                make_test_agent("unknown", "/home/test/.config/muse/"),
+                make_test_agent("unknown", r"C:\Users\test\.config\muse\auth.json"),
+                make_test_agent("muse", "~/.local/share/muse/sessions"),
+                make_test_agent("muse", "~/.local/share/muse"),
+                make_test_agent("unknown", "~/.config/muse-other/sessions"),
+            ],
+            Some(make_test_sys_info("linux", "/home/test")),
+        );
+        let source = generator.generate_source("workstation", &report);
+        assert_eq!(
+            source.paths,
+            vec![
+                "~/.local/share/muse/sessions",
+                "~/.local/share/muse",
+                "~/.config/muse-other/sessions",
+            ]
+        );
     }
 
     #[test]

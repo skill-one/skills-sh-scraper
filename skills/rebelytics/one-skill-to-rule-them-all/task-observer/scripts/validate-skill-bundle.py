@@ -36,13 +36,23 @@ BUILD_JUNK = {"__pycache__", ".DS_Store"}
 # replacement, an unresolved template slot or an unfinished merge. The gate
 # checks bundle FORM; this is the one CONTENT assertion, because a literal
 # backreference passed apply, gate and install once.
+SLOT_WHY = "unresolved template slot"
 RESIDUE_RES = [
     (re.compile(r"(?m)^\\[0-9]\s*$"), "literal regex backreference on its own line"),
     (re.compile(r"(?<![\w`])\\[1-9](?![\w])"), "literal regex backreference in prose"),
     (re.compile(r"(?m)^(<<<<<<<|=======|>>>>>>>)( |$)"), "merge conflict marker"),
-    (re.compile(r"\{\{[A-Za-z_][A-Za-z0-9_ .-]*\}\}"), "unresolved template slot"),
+    (re.compile(r"\{\{[A-Za-z_][A-Za-z0-9_ .-]*\}\}"), SLOT_WHY),
     (re.compile(r"\b(TODO|FIXME|XXX)\b: ?(fill|replace|write)", re.I), "placeholder note left in"),
 ]
+# A file that IS a template carries its slots as the deliverable, not as
+# residue: exempt it from the SLOT rule only — every other residue rule and
+# every other gate check still runs on it, so the exemption never becomes the
+# hand-zip that also skips the checks nobody questioned.
+TEMPLATE_MARKER = "<!-- template: slots intentional -->"
+
+
+def slots_are_intentional(path, body):
+    return "template" in str(path).lower() or body.lstrip().startswith(TEMPLATE_MARKER)
 SECOND_FRONTMATTER_RE = re.compile(r"^---\n.*?\n---\n\s*(---\n|name:|description:)", re.S)
 
 
@@ -96,10 +106,22 @@ def check_dir(skill_dir, fails):
         fails.append(f"description {len(desc)} chars > cap {MAX_DESCRIPTION_CHARS}")
     elif len(desc) > 900:
         print(f"warn: description {len(desc)} chars (cap {MAX_DESCRIPTION_CHARS}) — near the boundary")
-    # every cited bundled path exists (backticked, real extension — globs in prose are skipped)
+    # Every cited bundled path exists (backticked, real extension — globs in
+    # prose are skipped). Ownership is inferred from the shape of the span, so
+    # the convention has to make the two cases distinguishable: PATH_RE requires
+    # the reserved prefix IMMEDIATELY after the backtick, which means a path
+    # qualified with its owning skill's name — `<skill-name>/references/x.md` —
+    # does not match and is exempt by construction. That qualified form is how a
+    # skill cites a file belonging to a different skill; re-wording a legitimate
+    # cross-reference so the backtick no longer starts with the prefix is not.
+    # The failure message names the convention, because a false FAIL here is
+    # otherwise indistinguishable from a genuinely missing file.
     for rel in sorted(set(PATH_RE.findall(text))):
         if not (skill_dir / rel).is_file():
-            fails.append(f"cited path missing from staged set: {rel}")
+            fails.append(
+                f"cited path missing from staged set: {rel} "
+                f"— if this file belongs to another skill, cite it as "
+                f"`<skill-name>/{rel}`, which this check exempts")
     # exactly one frontmatter block: a second `---` block (or stray
     # name:/description: lines) directly after the first is a duplicated
     # header that every field check passes by construction
@@ -115,7 +137,11 @@ def check_dir(skill_dir, fails):
             # fenced blocks and inline spans, keeping line numbers intact
             prose = re.sub(r"(?ms)^```.*?^```[ \t]*$", lambda m: re.sub(r"[^\n]", " ", m.group(0)), body)
             prose = re.sub(r"`[^`\n]*`", lambda m: " " * len(m.group(0)), prose)
+            rel = p.relative_to(skill_dir)
+            exempt_slots = slots_are_intentional(rel, body)
             for rx, why in RESIDUE_RES:
+                if why == SLOT_WHY and exempt_slots:
+                    continue
                 m = rx.search(prose)
                 if m:
                     line = body.count("\n", 0, m.start()) + 1

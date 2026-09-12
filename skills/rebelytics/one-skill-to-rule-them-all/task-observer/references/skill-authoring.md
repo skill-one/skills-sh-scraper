@@ -95,9 +95,16 @@ in three levels: frontmatter metadata is always in context, the SKILL.md
 body loads whenever the skill triggers, and bundled resources load only
 when something reads them. The body is therefore a per-invocation tax and
 the reference files are not, so content belongs in the body only if it
-changes behaviour every time the skill fires. Any NEW or SUBSTANTIALLY
-REVISED skill whose body would run past roughly 500 lines is split — this
-is the target structure, not a suggestion to weigh up. Concretely:
+changes behaviour every time the skill fires. **The split is the target
+structure for every NEW or SUBSTANTIALLY REVISED skill, whatever its
+size** — episodic material goes to `references/` from the first draft,
+not once the body has grown too big to read. A structure rule that
+switches on a line count gives one skill two shapes and a boundary every
+reader and every tool has to re-derive; starting split costs nothing at
+the small end. The ~500-line figure survives in one role only: as the
+**retrofit trigger** for an existing, not-yet-split skill — a body past
+roughly 500 lines is the point at which retrofitting stops being
+optional. Concretely:
 
 - **SKILL.md keeps** the mental model, the small number of rules that
   change behaviour on every invocation, and a pointer list to the
@@ -453,16 +460,21 @@ patterns before committing — a scan, not a reminder.
    presentation/upload tool exists (e.g. Claude Code CLI), present the
    staged path and a change summary in chat instead; staging-only applies
    in every environment — it's the review loop's safety property, not a
-   filesystem constraint. For any
-   skill with supporting files, zip the staged directory into a `.skill`
-   bundle and present the bundle, never the bare SKILL.md: a single-file
+   filesystem constraint. For **every**
+   skill, zip the staged directory into a `.skill`
+   bundle and present the bundle, never the bare SKILL.md — one delivery
+   format regardless of file count: a single-file
    delivery convention applied to a multi-file skill truncates it
    silently (the install succeeds, the skill loads, and the missing
    pieces only surface when a reference load or script call fails
-   mid-task). **Pre-delivery gate — three items, checked at the moment of
-   delivery, not just at drafting time:** (1) every `references/`,
-   `scripts/`, `assets/` path in the staged SKILL.md body has its file in
-   the staged set; (2) if the skill is multi-file, the delivery artefact
+   mid-task), and a convention that switches on file count leaves that
+   boundary to be re-derived every time. **Pre-delivery gate — three items, checked at the moment of
+   delivery, not just at drafting time:** (1) every UNQUALIFIED
+   `references/`, `scripts/`, `assets/` path in the staged SKILL.md body
+   has its file in the staged set — a path qualified with an owning skill
+   name (`<skill-name>/references/<file>`) is a cross-reference, exempt by
+   construction, and that is the convention for citing another skill's
+   file (weekly-review.md, Delivery); (2) the delivery artefact
    is the `.skill` bundle — bare file links fail this gate even when all
    files are staged; (3) frontmatter constraints — measure the description
    (the FOLDED value, not the raw YAML block) and fail the delivery above
@@ -478,7 +490,7 @@ patterns before committing — a scan, not a reminder.
    RAW central-directory bytes, because CPython's `zipfile` normalises
    `0x5C` to `/` on read and reports a malformed archive as clean; Windows
    `Compress-Archive` produces exactly this defect for any skill with a
-   subdirectory. `scripts/validate-skill-bundle.py` implements all five as
+   subdirectory. `scripts/validate-skill-bundle.py` implements all seven as
    assertions and packs a well-formed bundle on any platform; run it where
    Python is available. Generally: any hard limit the consuming platform
    imposes belongs in this gate as a measurement compared to a bound in
@@ -528,12 +540,55 @@ patterns before committing — a scan, not a reminder.
    → use the skill-creator if available; internal skills with requirements
    already established in conversation → write directly, flagging
    substantial changes for review.
+8. **Before staging a rewrite, enumerate the surfaces outside the skill
+   directory that restate its rules.** A rule's home is a location; its
+   reach is every artefact that paraphrases it, and those live in
+   directories the owning skill cannot see, so a grep across the skill
+   folder — however thorough — reports clean. The surfaces that matter are
+   the ones that execute independently of the skill: scheduled-task prompts
+   above all, then activation fragments in CLAUDE.md or its equivalent,
+   saved shortcuts, and handoff docs. Enumerate them (a scheduled-task
+   listing returns a path per task, so this is one call plus a grep), then
+   either update each in the same round or replace the copy with a stop
+   condition per "Configuration vs process" above — including the clause
+   that says the omission is deliberate, or a later editor helpfully
+   restores the summary. The asymmetry is what makes the step
+   non-negotiable: a stale copy never fails loudly. It runs, plausibly,
+   doing the superseded thing, and the only witness is the user noticing an
+   old behaviour reappear weeks after asking for it to stop. And drift is
+   fast — it is the source's rate of change that predicts it, not the
+   copy's age (observed: four days from an anti-drift rule being written to
+   a live violation of it, in a skill whose rules were under active
+   rewrite, found only because the prompt happened to be opened for an
+   unrelated reason).
 
 ## Verifying relocations and restructures
 
-When content is relocated verbatim (splits into core + references, merges,
-restructures), "nothing was lost" is checkable mechanically — but only with
-a two-tier check:
+Two modes, and picking the wrong one is why a good move looks broken.
+**Verbatim relocation** — the content moves unchanged — is verified line
+by line, with the two-tier check below. **Merge or extraction** — several
+overlapping sources are reconciled into one destination, wording is
+rewritten, tool or client names are generalised into capability language
+on the way — is verified section by section, because every moved line
+legitimately fails an exact match and the line-grep tier reports total
+loss on a perfect merge.
+
+For a merge or extraction, replace the line-grep tier with a **mandatory
+source-section → destination coverage table, one per mover**: every
+heading of every source is accounted for as moved / merged-into /
+left-in-companion / dropped-with-reason, alongside the content only one
+source carried, the generic content deliberately left behind, and the
+substitutions made. Keep the word-count sanity check per file — it is
+cheap and catches wholesale omission. And **the mover of a split section
+writes both destinations**: whoever moves material out of a skill also
+writes that skill's remainder for the same sections. Complementarity —
+nothing in both places, nothing fallen between them — cannot be checked
+afterwards as cheaply as it can be produced, and splitting the two halves
+across two authors guarantees the seam nobody owns. The coverage table
+is the artefact a merge is admitted on; a diff is not.
+
+For a verbatim relocation, "nothing was lost" is checkable mechanically —
+but only with a two-tier check:
 
 1. Enumerate every added/moved line via `diff` of the old base vs the new
    base.
@@ -664,6 +719,21 @@ the set first — not because the new instance needs their content, but
 because it is the only moment when the differences between all of them are
 being actively thought about by anyone. Skipping the comparison wastes the
 audit and creates the divergence.
+
+**When the extraction does happen, work brief-first.** Write the split
+rule once, before any file is touched — the test that decides where a
+sentence goes (*could this sentence survive having the platform's name
+removed?* → core; otherwise → companion), the confidentiality rules, the
+generalisation substitutions, and any global numbering rule — and hand
+that one brief to every mover, rather than letting each rediscover the
+rule from the material in front of them. Then give each destination file
+one mover, and require that mover to produce **both** halves of every
+section it splits (the core text and the companion's remainder) plus the
+coverage table from "Verifying relocations and restructures". The
+reconciliation notes, not the diffs, are the deliverable the maintainer
+reviews. Two independent movers flagging the same ambiguity means the
+brief is the defect: fix the brief and re-issue rather than adjudicating
+the outputs.
 
 ## Retiring skills — harvest before you retire
 

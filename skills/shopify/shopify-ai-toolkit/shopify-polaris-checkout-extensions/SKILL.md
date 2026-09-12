@@ -1,10 +1,10 @@
 ---
 name: shopify-polaris-checkout-extensions
-description: "Build custom functionality that merchants can install at defined points in the checkout flow, including product information, shipping, payment, order summary, and Shop Pay. Checkout UI Extensions also supports scaffolding new checkout extensions using Shopify CLI commands."
+description: "Build custom functionality that merchants can install at defined points in the checkout flow, including product information, shipping, payment, order summary, and Shop Pay. Checkout UI Extensions also supports scaffolding new checkout extensions using Shopify CLI commands. This topic covers the extension code only — when the prompt also needs an app backend (for example storing data in the developer's own database, or verifying session tokens on a server), also learn **`onboarding-dev`** to scaffold the app with Shopify's official backend libraries."
 compatibility: Requires Node.js
 metadata:
   author: Shopify
-  version: "1.13.0"
+  version: "1.14.1"
 hooks:
   PostToolUse:
     - matcher: Skill
@@ -137,6 +137,17 @@ Search the developer documentation for target-specific documentation:
 ## Guides
 
 **Available guides:** Using Polaris web components, Configuration, Error handling, Upgrading to 2026-01
+
+## App backend
+
+When the extension makes authenticated calls to the app's own backend (using the Session Token API with the `network_access` capability), use Shopify's official library for the server language — these handle session token verification:
+
+- Node.js: `@shopify/shopify-app-react-router` (recommended), `@shopify/shopify-app-remix`, or `@shopify/shopify-app-express`
+- Ruby: `shopify_app` for Rails
+- PHP (Laravel or any framework): `shopify-app-php`
+- Python (Django or any framework): `shopify-app-python`
+
+The full list of official libraries and app templates lives at [shopify.dev/docs/api/libraries-and-templates](https://shopify.dev/docs/api/libraries-and-templates).
 
 ## Components available for checkout UI extensions.
 

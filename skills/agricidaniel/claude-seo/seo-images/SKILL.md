@@ -12,7 +12,7 @@ argument-hint: "[url]"
 license: MIT
 metadata:
   author: AgriciDaniel
-  version: "2.2.6"
+  version: "2.3.1"
   category: seo
 ---
 

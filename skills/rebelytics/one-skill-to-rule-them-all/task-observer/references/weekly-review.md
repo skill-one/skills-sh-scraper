@@ -48,6 +48,73 @@ handled the same way: skip the gated step, record it as a manual
 follow-up, and still emit the final report — a blocked step N must never
 cost the report for steps 1 through N-1.
 
+**Several observation logs on one machine — unify the review at the
+integration point.** First check whether the logs should coexist at all:
+`references/environments.md` requires one log per observed scope, and
+two logs over the same globally installed skills are the silent fork it
+warns about — consolidate those instead of reviewing them jointly. What
+remains is the legitimate case: logs deliberately kept apart because
+observation bodies carry non-portable task context, while the skills
+they observe are installed globally and therefore shared. There, running
+the per-workspace review once per log stages each shared skill several
+times, each staged copy integrating only its own log's slice — by
+construction the same-day multi-writer divergence the Delivery section
+exists to detect — and convergent observations filed in different
+projects are escalated as separate decisions, because no single run ever
+sees them together (the ownership-fence rule in Step 3 covers a backlog
+split across sessions, not across logs).
+
+An aggregate review is therefore an explicitly invoked run over a named
+set of workspace roots — not something a per-workspace scheduled task
+discovers or starts. Those keep their per-log behaviour, which is what
+stops two runs from draining the same queues at once. **The named set is
+given as ABSOLUTE paths**, once, at the top of the run: roots enumerated
+from a project identity commonly begin with `-` (Claude Code encodes the
+directory path that way), and a leading `-` in a relative argument is
+read as an option by `ls`, `grep` and `find` — the scan then returns
+zero files with no error, which is indistinguishable from a clean log.
+Given the roots:
+
+- **Scope by what the logs observe, not by what they declare.** Logs
+  whose workspaces observe the same installed skills are in scope. Do
+  not gate on their `skill:` lists overlapping: Step 3 says convergent
+  entries are routinely filed against *different* skills, so a
+  declared-target gate skips exactly the clusters this exists for.
+  Cluster across all logs first (Step 3's Principle-line pass), then
+  decide.
+- **Qualify every id that leaves its log.** Ids are allocated per log,
+  so `#5` exists in each of them. Any cross-log reference — approval
+  list, `resolution: "by #N"`, Step 8 summary, manifest entry — carries
+  the workspace key alongside the number.
+- **Stage each affected skill ONCE, and publish the anchor workspace
+  everywhere.** One participant is the **anchor workspace**: its
+  `skill-updates/` holds the staged copy, and it supplies
+  `[workspace folder]` for the Step 5 seed — which then picks its
+  **anchor directory** (`[today]/[skill-name]`, or a discriminated one
+  under the same-day rule) exactly as in a single-log run. The two
+  senses are separate axes and are always named in full: *anchor
+  workspace* = which log's `skill-updates/` tree, *anchor directory* =
+  which dated directory inside it. Append the manifest entry in the
+  anchor workspace AND a pointer entry in every participating
+  workspace's `PENDING.md`, **creating that manifest where it does not
+  exist yet** — a participant that has never staged anything has no
+  `PENDING.md`, and an appender that assumes the file is there writes
+  nothing. A manifest is read only from its own workspace and its entry
+  is removed on install, so an anchor named in one workspace alone is
+  invisible from the others and gone after the first install.
+- **Bookkeeping stays local.** Each log's work queue, status edits,
+  archival, `last-review-date.txt` and `activation-tiers.txt` are read
+  from and written back to its OWN workspace — the activation record in
+  particular is a statement about that workspace's config, so an
+  aggregate run writes one per participant and never a single copy at
+  the anchor workspace. Integration and staging unify; bookkeeping does
+  not.
+
+The principle: when several append-only queues feed edits into shared
+targets, the review that drains them must be unified at the integration
+point even though the queues themselves stay separate — and unification
+needs an identity per queue, or the merged references stop resolving.
+
 ## Approval policy
 
 **Interactive (user present):** always present observations grouped by
@@ -99,11 +166,24 @@ application on this policy, it does not pre-approve the changes.
 default — safety comes from the staging-plus-review pattern (nothing is
 live until the user installs it). **Escalate without applying** when: (1)
 the observation proposes a NEW skill (naming/scope/type/licence need the
-user); (2) it removes or substantially restructures existing content; (3)
-it self-flags uncertainty ("not sure if…", "worth discussing…"); (4) two
-observations conflict. A scheduled run should still apply every
-non-escalated item — a review that applies nothing is just a report
-generator.
+user); (2) the AGENT is proposing a removal or a substantial restructure
+of existing content; (3) it self-flags uncertainty ("not sure if…",
+"worth discussing…"); (4) two observations conflict. A scheduled run
+should still apply every non-escalated item — a review that applies
+nothing is just a report generator.
+
+Criterion (2) is about whose judgement is driving the change, not about
+the size of the diff. Where the observation records the removal or
+restructure as DECIDED by the user AND carries a complete specification
+— it names what replaces what, in enough detail to apply without
+inventing anything — apply it, provided the target skill is not
+published open-source, and always flag it as the FIRST diff in the
+summary for the user to read. Where the spec is partial ("something
+like…", "the old rules should probably go"), criterion (3) applies and
+it stays escalated. An escalation rule guards against the agent's own
+judgement, not against change as such: escalating a decision the user
+already made returns their answer to them as a question, buys no safety,
+and costs a cycle in which the skill stays knowingly wrong.
 
 Escalate one DECISION per cluster, never the same decision twice — cluster
 the OPEN entries before the escalation list is written (Step 3), and list
@@ -146,8 +226,21 @@ fallback active. No → write today's date to
 firings within the window re-surface the offer). No scheduler available in
 this environment (per the definition above) → skip silently.
 
-**Step 1 — load.** Archive observation files resolved in *previous*
-sessions (see Archival on Write in SKILL.md). Read only the frontmatter of
+**Step 1 — load.** First, the activation regression check — the one
+half of "is activation in place?" a review can reach: a review only runs
+when the skill loaded, so it cannot detect an install that never
+activated, but it can detect a tier that WAS in place and is no longer
+(a rewritten CLAUDE.md, a hooks file replaced by a settings sync). Read
+the activation config named in `references/environments.md` — the
+instruction block in CLAUDE.md or its equivalent, and the session-start
+hook where the harness has one — and if a tier that a previous review
+recorded as present is missing, say so in the summary's first line and
+re-suggest the block; record the tiers found in
+`skill-observations/activation-tiers.txt` so the next review has a
+baseline to compare against — in an aggregate run over several logs,
+one such file per participating workspace, describing that workspace's
+own config, never a single copy at the anchor workspace. Then archive observation files resolved in
+*previous* sessions (see Archival on Write in SKILL.md). Read only the frontmatter of
 each file in `observation-log/` — not the bodies — to build the work queue;
 load a body only when you actually action that observation in Step 5. This
 frontmatter-first pass is what keeps the review cheap as the backlog grows.
@@ -206,7 +299,16 @@ legitimately moves on, so a bare "differs" is not a verdict:
   superseded; remove the entry with a note.
 - **(c) the staged copy carries content absent from live** → NOT
   installed; surface it, and treat the staged copy — not live — as the
-  base for any new staging of that skill in this review.
+  base for any new staging of that skill in this review. Also list, in
+  the summary, the observations whose `resolution:` names that staged
+  path (`grep -l "skill-updates/<anchor>/<skill>" observation-log/*.md
+  observation-log/archive/*.md`): they were marked `actioned` at staging
+  and their work has not landed. They stay `actioned` — the status
+  describes the review's act, and re-opening would re-queue work already
+  done — but the summary carries them under "actioned, awaiting install",
+  and a staged copy that reaches its SECOND review un-installed is
+  escalated as a decision (install it, or discard it and re-open its
+  observations) rather than carried forward a third time.
 
 Reconcile in BOTH directions every time: lingering-done (installed but
 still listed) and missing-done (staged but never installed) fail
@@ -310,6 +412,27 @@ pointing at a decision that may be settled without it.
 Flag every skill that doesn't yet comply with each active cross-cutting
 principle.
 
+**Adding or materially editing a principle carries its starter-set
+verdict in the same act.** Where a bundle ships a public,
+provenance-stripped extract of the private principles file — this skill's
+`references/starter-principles.md` — that extract is derived content, and
+a one-off triage performed once at extraction time is a snapshot: the
+extract starts drifting at the very next edit of the private file, and
+nothing downstream would ever produce a verdict for the entries added
+since. So the step that adds a principle, or changes an existing one
+materially, classifies it in the same act: **`include verbatim`**,
+**`include after scrub`** — naming exactly what to strip (provenance,
+observation numbers, client or environment specifics) — or **`leave
+out`** (personal strategy, or specific to one environment). Append the
+verdict to the triage reference, keyed by principle number, so the
+classification is per entry and dated by the edit that prompted it.
+Then, for this skill, stage the starter-file change alongside the
+principle change rather than as a follow-up: append the scrubbed entry,
+bump the `Starter set version:` line at the top of the starter file
+(every adopter's reconciliation offer is gated on that number, so an
+unbumped version ships the new entry to nobody), and run the
+confidentiality scan over the starter file in the pre-delivery gate.
+
 Then run the **family drift audit**: for each family in
 `skill-observations/skill-families.md`, grep every member for each rule
 listed as shared and surface the gaps. It is mechanical and takes minutes,
@@ -344,6 +467,79 @@ the most. An empty duplicate search releases the draft only after a
 positive control: search for a term you know an existing issue contains,
 and if that returns nothing the search is broken, not clean.
 
+**Published skills have more inputs than the log and more outputs than
+one staged copy.** For any skill published to a public repository, run
+these four passes before and while staging it; each produces something
+the summary carries.
+
+1. **Merge last cycle's release branch first.** If the previous review
+   cut a `release/vX.Y.Z` branch and it has been installed locally for
+   the week, this repo's first act is the merge decision — and it
+   precedes the new staging, because everything staged this week is
+   staged on top of the merged result. **A branch merges only when every
+   change on it has either a week of natural exercise recorded or a
+   synthetic check with a stated pass criterion run in this review.** The
+   test week is the container; the checks are the evidence. A clean week
+   is evidence about the changes the week's activity happened to touch
+   and silence about the rest, so absence of complaints certifies
+   nothing. The merge report lists each change with its evidence —
+   exercised naturally (where), or check run (fixture and result) — and
+   a change with neither does not merge; it stays on the branch for
+   another cycle. The checks themselves come from the branch's test-plan
+   observation, which is in this review's queue by procedure (below).
+2. **Read the repo's open issues and pull requests.** They are review
+   inputs alongside the observation log — the review is the only point
+   at which including a contribution costs nothing extra, and a channel
+   that is merely monitored is a backlog that collides with the next
+   sync. List every open issue and PR and classify each: **include now**
+   (doc-level fixes, bug fixes with a clear spec, changes consistent
+   with the current rules), **test branch** (behavioural changes to
+   snippets, procedures or activation, and anything that changes what an
+   agent does at session start), or **decline, with the reason**. Apply
+   the include-now set to the staged copy, and record in the staging
+   manifest both the classification and, per include-now item, the
+   reporter's **GitHub login and numeric user ID** — the publishing run
+   needs both to write a trailer GitHub can resolve
+   (`Co-authored-by: Name <ID+login@users.noreply.github.com>`, or
+   `Reported-by:` for a bare report). Credit written as prose in a
+   commit body is credit the platform cannot see, and the ids are cheap
+   to collect here and awkward to collect at commit time.
+3. **Re-derive every numeric and duration claim in the README and user
+   guide.** Prose counts are derived content with no timestamp: they were
+   true when written and drift with every week of use and every merged
+   contribution, and nothing else in the pipeline re-checks them.
+   Enumerate the claims, recompute each from its source — observations
+   logged = the highest id ever issued; skills observed = the installed
+   skill count; contributors, issues and PRs = the repo's ALL-TIME
+   counts, not the open ones; months or years in use = from the date of
+   the earliest observation in the log (the oldest file in
+   `observation-log/archive/`), not from the install date or the repo's
+   first commit — and update them in the same staging. Carry the new
+   values into the review summary so the maintainer sees what changed.
+   Anything of the same class the maintainer alone would notice (a
+   "recommended by" list, a supported-platform list) is checked in the
+   same pass.
+4. **Classify every change, and stage twice.** Each change going into
+   this week's version — community item or observation — is
+   **safe-to-main** or **needs-test**, by the same test as pass 2. That
+   produces two artefacts, not one: the **main staging** (safe changes
+   only) and the **release-branch staging** (safe plus needs-test),
+   named `release/vX.Y.Z` for the version the branch will become, and it
+   is the release-branch staging that is installed locally for the test
+   week. Both are staged copies under `skill-updates/` with their own
+   manifest entries; neither is pushed by the review.
+
+**Standing rule — a branch is cut together with its test plan.** The
+session that cuts a release/test branch classifies every change on it as
+*exercised naturally by a week of use* or *unlikely to happen
+naturally*, and for the second class writes a test plan — fixture,
+procedure and pass criterion per change — as an observation whose
+`skill:` list names the branch's skill. Filed that way, the plan reaches
+the next scheduled review by procedure rather than by anyone
+remembering, and the merge step above has the evidence it requires. A
+test period tests what the period's activity happens to touch; for
+everything else it is only a delay.
+
 Choose the anchor first: if `[today]/[skill-name]` already exists, apply the
 same-day rule under Delivery — integrate another writer's pending copy, or give
 a second round after an install a discriminated anchor — and put that path into
@@ -374,18 +570,17 @@ live path *inside* the staged directory, once per skill. And keep `IFS=` on
 both `read` loops — workspace paths routinely contain spaces, and without it
 the loop mangles them.
 
-**If the `diff` reports anything, do not edit and do not delete.** On a mount
-that denies `unlink`, `rm -rf` and `rmdir` both fail on the unwanted paths, so
-the obvious cleanup is unavailable and the step stalls. Rename them into a
-holding folder instead — the mount permits rename — then re-run the diff:
-
-```bash
-mkdir -p "[workspace folder]/_to_delete/<date>-staging-artefacts"
-mv "<unwanted path>" "[workspace folder]/_to_delete/<date>-staging-artefacts/<name>"
-```
-
-Requesting the delete permission for the workspace folder also works where
-that tool exists, and is worth doing anyway before the prune in Delivery.
+**If the `diff` reports anything, do not edit.** On a mount that denies
+`unlink`, `rm -rf` and `rmdir` both fail on the unwanted paths, so the
+cleanup needs the environment's delete grant: **request the delete grant
+on the target directory (`allow_cowork_file_delete` or the equivalent),
+then delete — never rename into a holding folder.** Then re-run the diff.
+A holding folder converts one deletion into a second, deferred task the
+user has to remember, and the queue grows silently with no consumer. In a
+scheduled or autonomous run, request the grant the same way; if the
+permission stream fails there, leave the files in place, name them in the
+report as "pending deletion — grant needed", and still never rename them
+into a holding folder.
 
 The sequence exists so the live path is never the target of an edit, the
 staged copy provably starts from live, and a stale staged copy from an earlier
@@ -492,8 +687,13 @@ detection mechanism. The check is one `ls` against a list already in hand.
 
 Then, in each applied observation's frontmatter set
 `status: actioned`, `resolved: YYYY-MM-DD` (today), and
-`resolution: Applied to [skill-name] (weekly review)` — editing only those
-fields, in that one file. The `resolved:` date is load-bearing: archival is
+`resolution: "Staged for [skill-name] at skill-updates/<anchor>/[skill-name] (weekly review)"`
+— editing only those fields, in that one file. The resolution names the
+staged path deliberately: `actioned` at this point means "applied to a
+staged copy", and handing an artefact over and having it taken up are two
+different facts — the first must not close the status of the second. The
+staged path is what lets the next review find every observation whose
+work is sitting un-installed (below). The `resolved:` date is load-bearing: archival is
 gated on it (files archive only when it's before today), so a dateless mark
 breaks the cross-session grace period. Do NOT archive same-session — the
 next write on a later day archives them.
@@ -519,6 +719,12 @@ Updated skills ([N] observations, [N] principles applied):
 applied with the outstanding skill named — never left implicit]
 [drift audit: gaps found per family, and how each was resolved]
 [N observations logged without a sibling check]
+
+### Published skills
+[per published skill: release branch merged / held, with each change on
+it and its evidence (exercised naturally where, or check run and result);
+community items included now, routed to the test branch, or declined
+with the reason; README and user-guide counts re-derived, old → new]
 
 ### Parked
 [one line each: #id — title — unparks when: [condition]; plus any entry
@@ -562,15 +768,23 @@ review and install from there.
 Never write to the live skill directly, even where the skills directory is
 writable — staging-only is a deliberate safety property of the review loop
 (nothing goes live without the user's sign-off), not a filesystem
-constraint. For any skill with
-supporting files, zip the staged directory into a `.skill` bundle and
-present the bundle; a bare SKILL.md install silently truncates a
-multi-file skill. Pre-delivery gate (run as the last step
+constraint. **Every** staged skill is packed into a `.skill` bundle and
+presented as that bundle — one delivery format for all of them,
+regardless of size or file count. A format that switches on the shape of
+the artefact creates two conventions for one thing and a boundary every
+consumer has to re-derive; one format costs nothing on a single-file
+skill and removes the whole "a bare SKILL.md silently truncates a
+multi-file skill" failure class at the other end.
+Pre-delivery gate (run as the last step
 before presenting): (1) grep the staged SKILL.md body for `references/`,
 `scripts/`, `assets/` paths and fail the delivery if any referenced file
-is missing from the staged set; (2) for multi-file skills, fail the
-delivery if the artefact being presented is bare file links rather than
-the `.skill` bundle; (3) measure each staged skill's frontmatter
+is missing from the staged set — a backticked path counts as this skill's
+own only when it is UNQUALIFIED, so a file belonging to another skill is
+cited as `<skill-name>/references/<file>` and passes untouched; that
+qualification is the convention, and re-wording a genuine cross-reference
+until the backtick no longer starts with the prefix is disguising a
+reference to satisfy a linter, not fixing a defect; (2) the artefact presented is the
+bundle — bare file links fail this gate; (3) measure each staged skill's frontmatter
 description (the folded value, not the raw YAML block) and fail the
 delivery above 1024 characters, with a soft warning above ~900 —
 measure every skill in the set, not just the one that failed; (4) `name`
@@ -584,17 +798,31 @@ outside code: a literal regex backreference (`\1`) on its own line or in
 prose, merge-conflict markers, unresolved `{{slot}}` placeholders — the
 gate checks the form of a delivery, and this is the one content assertion,
 because a failed replacement once passed apply, gate and install as a
-literal `\1`. `scripts/validate-skill-bundle.py`
+literal `\1`. The unresolved-slot rule — and only that rule — is waived
+for a file whose path contains `template` (case-insensitive) or whose
+first line is the marker `<!-- template: slots intentional -->`: in a
+reference file that IS a template for a delegate author, the slots are
+the deliverable, not residue. Every other residue rule and every other
+gate item still runs on such a file, so the exemption never becomes the
+hand-zip that skips the checks nobody was questioning.
+`scripts/validate-skill-bundle.py`
 asserts all seven and packs a well-formed bundle — run it where Python is
-available. Sweep build artefacts (`__pycache__/`, `*.pyc`, `.DS_Store`,
+available. Where the bundle ships a public extract of a private file
+(this skill's `references/starter-principles.md`), run the
+confidentiality scan over that extract here too: it is the one file in
+the bundle whose content is copied from a private source, so the
+authoring-time sweeps never see it. Sweep build artefacts (`__pycache__/`, `*.pyc`, `.DS_Store`,
 `.~lock.*`) before zipping and read the archive listing back after, for
 leaked artefacts and for path separators. When seeding staged
 copies from the read-only mount, `chmod -R u+w` the staged path first —
 the mount's read-only mode travels with the copy, for directories as
 well as files. Do not edit skill files in place — nothing goes live
 until the user installs it. **Keep-two rule:** for any skill, keep only
-the two most recent staged copies under `skill-updates/`; move the
-older ones to `_to_delete/`. The rule is scoped to staged skill copies,
+the two most recent staged copies under `skill-updates/`; for the older
+ones, **request the delete grant on the target directory, then delete —
+never rename into a holding folder** (if the permission stream fails in
+an autonomous run, leave them in place and name them in the report as
+"pending deletion — grant needed"). The rule is scoped to staged skill copies,
 not to date directories: before pruning a directory, list what else is in
 it — an assembly script, a verification script, working notes — and move
 anything that is not a staged skill copy aside first, or leave the
@@ -635,7 +863,13 @@ prevented seeding over it.)
 `[workspace folder]/skill-updates/PENDING.md`: the skill, the date
 directory, the producer (which session or scheduled run staged it), the
 observation ids applied, and a per-change summary
-(observation id → section touched → one-line rationale). The manifest is
+(observation id → section touched → one-line rationale). The install
+artefact is always the `.skill` bundle, so the entry never distinguishes
+a single-file from a multi-file skill. For a published skill it also
+carries the community-item classification from Step 5 (include now /
+test branch / declined, with the reason) and, per included item, the
+reporter's GitHub login and numeric id, so the publishing run's commit
+can write the crediting trailer without going back to the API. The manifest is
 what the Session Start Protocol reads to announce "N staged updates
 awaiting review", so staged work is never quietly forgotten; the
 per-change summary is what lets the user review a full-file diff
@@ -646,8 +880,13 @@ it, or when the keep-two rule prunes the directory — never "at install
 time", because no session observes the install; the session that reads
 the manifest owns its cleanup.
 
-The manifest carries provenance and install instructions, never follow-up
-work. Anything a review recognises as "check next time" — a sibling to
+The manifest carries three kinds of entry and no others: provenance,
+install instructions, and — in an aggregate run over several logs — the
+**cross-log pointer** naming the anchor workspace where a shared skill
+was actually staged. The pointer is provenance for a staging that lives
+elsewhere, so it belongs here; it is not follow-up work. Follow-up work
+is what the manifest never carries. Anything a review recognises as
+"check next time" — a sibling to
 mirror, an audit to run once the staging is installed — is logged as its own
 observation before the summary is written: created with `status: open`, as the
 file-format rule requires of every new entry, and parked in the same turn —
@@ -655,7 +894,12 @@ file-format rule requires of every new entry, and parked in the same turn —
 edit a review makes on any parked entry. That puts it in the queue the next review
 reads by procedure (Step 1 re-checks every parked condition; Step 8 lists
 every parked entry), and it survives the reconciliation and the prune that remove
-the manifest entry. A note in an artefact whose lifetime ends at install
+the manifest entry. In an aggregate run, that parked follow-up is written
+to the log of the workspace whose work it concerns — the one whose next
+review will need it — and to the anchor workspace's log only when the
+follow-up is about the shared staging itself; bookkeeping stays local,
+and an id is qualified with its workspace key wherever it is referenced
+from another log. A note in an artefact whose lifetime ends at install
 cannot carry a follow-up: nothing in the review reads manifest notes as a
 queue, and the one place the review is guaranteed to delete is the one
 place it is tempting to write the leftover backlog. (Observed: two sessions

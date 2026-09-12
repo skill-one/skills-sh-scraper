@@ -4,7 +4,7 @@ description: "Choose when the user needs **Shopify CLI** to run or fix something
 compatibility: Requires Node.js
 metadata:
   author: Shopify
-  version: "1.13.0"
+  version: "1.14.1"
 hooks:
   PostToolUse:
     - matcher: Skill
@@ -126,15 +126,16 @@ Apply this section only when the user explicitly wants to run a GraphQL operatio
 - For store-scoped workflows, keep the answer in Shopify CLI command form rather than switching to manual UI steps, cURL, or standalone API explanations.
 - Stay in command-execution mode even for read-only requests like show, list, or find.
 - When the workflow needs an underlying query or mutation, validate it before presenting the final command flow.
-- The primary answer should be a concrete `shopify store auth --store ... --scopes ...` + `shopify store execute --store ... --query ...` workflow.
+- The primary answer should be a concrete `shopify store auth --store ... --scopes ...` + `shopify store execute --store ... --query ...` workflow, except for the exact preview store created in the current conversation as described below.
 - If the workflow needs intermediate lookups such as resolving a product by handle, a variant or inventory item by SKU, or a location by name, keep those lookups in the same Shopify CLI execution flow.
 
 ### Execution flow
 
 - Use the exact commands `shopify store auth` and `shopify store execute` when describing the workflow.
-- Run `shopify store auth` before any store operation.
+- Run `shopify store auth` before any store operation unless `shopify store create preview` created the exact target store in the current conversation. Preview creation stores an Admin session for that returned store domain, so reuse it directly with `shopify store execute` or `shopify store bulk execute` instead of interrupting onboarding with another authentication flow.
+- Keep the preview-session exception narrow: it applies only to the exact store domain returned by the current preview-creation result. Authenticate normally for an existing store, a separately named store, or a later conversation where that creation result is unavailable.
 - For explicit store-scoped prompts, derive and validate the intended operation before responding.
-- Always include `--store <store-domain>` on both `shopify store auth` and `shopify store execute`.
+- Always include `--store <store-domain>` on `shopify store execute` and, when authentication is required, on `shopify store auth`.
 - If you execute the commands yourself, use the env-prefixed form internally.
 - Model the final user-facing answer on clean commands such as:
   - `shopify store auth --store <store-domain> --scopes <scopes>`

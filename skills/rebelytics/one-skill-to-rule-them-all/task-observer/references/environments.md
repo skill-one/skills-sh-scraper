@@ -65,6 +65,24 @@ uninformed decisions past the review gate, and approval locks them in.
 Load skills before exploring, researching or drafting the plan: both,
 skill first.
 
+**Select on the decision, not on the artefact.** Selection and loading are
+separate steps, and the selection step fails in its own way: it runs
+against what the user handed over — files to read, a link, a screenshot —
+so every skill whose description names a *subject* is missed whenever the
+request's surface form is an activity no skill claims. Before answering,
+name the DECISION the user is making and match the installed descriptions
+against that ("the deliverable is advice about X" → load the skill whose
+description names X), even though the request arrived as a document to
+review. The high-risk shape is an attachment plus an open question — "here
+are two files, what do you think?" — which presents as a reading task and
+hides its own domain; observed, it ran for four substantive turns of
+domain advice with the domain skill unloaded, while the session-start
+skills had loaded correctly. That is what makes this distinct from an
+activation-config failure: the mechanism worked and still selected the
+wrong set. The failure is silent by construction, because a skill that
+never loads cannot announce that it was relevant, so the check belongs in
+the checklist rather than in a disposition.
+
 ### The activation block
 
 ```
@@ -75,6 +93,11 @@ check, frontmatter scan, review trigger). Loading the skill and running
 the protocol are separate steps; a session that loads the file and stops
 has activated nothing. Any turn that will involve a tool call counts; do
 not classify the session as "too simple" from its opening message.
+
+Select skills on the DECISION the request is about, not on the artefact it
+arrived as. Name what the user is deciding, then match the installed skill
+descriptions against that — a request handed over as a file to review
+still needs the skill whose description names its subject.
 
 After completing each task, check the observation records written this
 session and report a one-line summary (ids and titles, or "none logged
@@ -135,7 +158,13 @@ right only for skills that exist in one project. A stable anchor can
 still be plural — in Claude Code the identity is derived from the
 directory the session starts in, so per-subfolder habits shard the log
 into several stable anchors that each look like the only one. Decide the
-scope once, at install, and pin it.
+scope once, at install, and pin it. **One plural case is legitimate and
+is not a shard:** logs deliberately kept apart because their observation
+bodies carry task context that does not travel, over skills that are
+nonetheless installed globally and therefore shared. Read the multi-log
+block in `weekly-review.md` before consolidating anything — it defines
+that case and the aggregate review that serves it. A reader who stops at
+this paragraph consolidates a set that was meant to stay separate.
 
 **Before creating a log, search for one.** Check the plausible anchor
 candidates — the pinned path, the project identity root, the
@@ -169,6 +198,20 @@ post-task summary line makes silent inactivity visible at the first
 task boundary. If you adopt only one line of the block, adopt the
 post-task check — in field use it turned an intermittently-activating
 install into a stably-recording one.
+
+A third belt sits inside the protocol itself: its scan appends a dated
+line to `checkpoints.log` (SKILL.md, Session Start Protocol step 2), so
+the protocol leaves its own trace and a session that skipped it is
+detectable afterwards rather than only noticeable in the moment. That is
+the missing half of the diagnosis above — the load produces a visible
+artefact in the transcript and the protocol produces none, so having
+loaded the skill feels like having done the thing the skill asks for.
+Treat *loaded but not run* as a distinct failure cause, alongside the
+skill being absent, truncated, or present and skipped: it is the likeliest
+of the four, precisely because the load's visible success stands in for
+the protocol's invisible omission, and the aggravating condition is the
+same one that produces a skipped load — an opening message small enough
+that a full startup protocol feels disproportionate to it.
 
 **Anti-pattern:** don't chain activation through another skill — load
 task-observer and related skills independently from configuration; a broken
@@ -396,7 +439,8 @@ regimes:
 This skill consists of `SKILL.md`, the reference files it lists
 (`weekly-review.md`, `skill-authoring.md`, `environments.md`,
 `observation-log.md`, `signals.md`, `migration.md`,
-`starter-principles.md`) and `scripts/migrate-log.py`. If a referenced
+`starter-principles.md`) and `scripts/migrate-log.py` and
+`scripts/validate-skill-bundle.py`. If a referenced
 file is missing, the install is
 incomplete: proceed using the rules in `SKILL.md`, tell the user which
 files are missing, and point them to the full bundle at the canonical

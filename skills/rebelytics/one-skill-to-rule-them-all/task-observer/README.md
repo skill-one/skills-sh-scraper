@@ -2,9 +2,9 @@
 
 ## The meta-skill that builds and improves all your skills, including itself.
 
-In the first seven months of using this meta-skill, it **logged over 1300 observations across my 75 skills**, most of which were turned into skill improvements. The majority of my 75 skills were themselves created based on observations by the meta-skill.
+In the first seven months of using this meta-skill, it **logged almost 1400 observations across my 78 skills**, most of which were turned into skill improvements. The majority of my 78 skills were themselves created based on observations by the meta-skill.
 
-The current version of task-observer also includes improvements suggested by 44 different users, across 82 issues and 23 pull requests. Without these contributions, the project wouldn't be half as good as it is today.
+The current version of task-observer also includes improvements suggested by 50 different users, across 103 issues and 26 pull requests. Without these contributions, the project wouldn't be half as good as it is today.
 
 This meta-skill is a practical application of the [Augmented Expertise](https://www.rebelytics.com/augmented-expertise/) methodology, an AI framework for knowledge workers. However, users have reported successful integrations into their Hermes and Openclaw setups, so it works equally well with autonomous agents.
 
@@ -164,6 +164,7 @@ I would like to thank the following creators, platforms, publications, companies
 - DecimalAI: [https://app.decimal.ai/skills/rebelytics-task-observer](https://app.decimal.ai/skills/rebelytics-task-observer)
 - MigueBaenaIA: [https://www.youtube.com/shorts/OBeoYZzHDcw](https://www.youtube.com/shorts/OBeoYZzHDcw)
 - Santiago Cosme: [https://www.linkedin.com/posts/santiagocosme_5-skills-para-poner-90-ugcPost-7491131673254846465-SQAl/](https://www.linkedin.com/posts/santiagocosme_5-skills-para-poner-90-ugcPost-7491131673254846465-SQAl/)
+- Skillselion: [https://skillselion.com/guides/task-observer-skill-claude-code-guide](https://skillselion.com/guides/task-observer-skill-claude-code-guide)
 
 If I forgot to list your recommendation here, please let me know or submit it via a PR in the same format as the others.
 

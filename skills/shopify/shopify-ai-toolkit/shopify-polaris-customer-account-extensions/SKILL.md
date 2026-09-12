@@ -4,7 +4,7 @@ description: "Build custom functionality that merchants can install at defined p
 compatibility: Requires Node.js
 metadata:
   author: Shopify
-  version: "1.13.0"
+  version: "1.14.1"
 hooks:
   PostToolUse:
     - matcher: Skill
@@ -111,6 +111,17 @@ Search the developer documentation for target-specific documentation:
 ## Guides
 
 **Available guides:** Using Polaris web components, Configuration, Error handling, Upgrading to 2026-01
+
+## App backend
+
+When the extension makes authenticated calls to the app's own backend (using the Session Token API with the `network_access` capability), use Shopify's official library for the server language — these handle session token verification:
+
+- Node.js: `@shopify/shopify-app-react-router` (recommended), `@shopify/shopify-app-remix`, or `@shopify/shopify-app-express`
+- Ruby: `shopify_app` for Rails
+- PHP (Laravel or any framework): `shopify-app-php`
+- Python (Django or any framework): `shopify-app-python`
+
+The full list of official libraries and app templates lives at [shopify.dev/docs/api/libraries-and-templates](https://shopify.dev/docs/api/libraries-and-templates).
 
 Components available for customer account UI extensions.
 These examples have all the props available for the component. Some example values for these props are provided.
