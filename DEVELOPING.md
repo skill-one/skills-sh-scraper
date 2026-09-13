@@ -26,6 +26,19 @@ Both `trending.json` and the per-owner `skills` arrays in `curated.json` are pla
 | `added`, `removed` | skills entering / leaving the index: newly listed upstream, and no longer listed (row and content directory deleted; full runs only — limited runs carry unevaluated rows over) |
 | `dropped`, `failed`, `carriedOver` | outcome counters (`dropped` = duplicate / no snapshot / no SKILL.md description); `failedIds` lists the failed skill ids |
 
+### The upstream `hash`
+
+```
+hash = sha256( concat over the skill's files, in case-insensitive path order:
+               utf8(path relative to the skill root) + 0x00 + raw file bytes + 0x00 )
+```
+
+- Order matters and it is case-insensitive path order (ICU base-strength collation), not a byte sort; a byte sort matches only ~43% of rows.
+- It covers the snapshot's file set — the same set `skills/` mirrors — with nothing else mixed in: no id, no repo prefix, no sizes or modes. The snapshot is not always every file in the source repo (upstream leaves some media/binary files out).
+- skills.sh documents only "SHA-256 hash of the skill's file contents", so this was recovered empirically: recomputing it from `skills/` reproduces 8,935 of the 8,993 rows of the 2026-09-12 snapshot, and every sampled exception once the files come from the source repository instead.
+- The 58 exceptions are fidelity limits of the mirror, not of the algorithm: the API's `contents` is a JSON string (a leading UTF-8 BOM is dropped, non-UTF-8 bytes arrive as U+FFFD), and `safeSegment` rewrites path characters outside `[A-Za-z0-9._-]` (CJK file names, spaces) — both change bytes or names that the digest covers.
+- Reproducing it is ~10 lines: read the directory, sort by `Intl.Collator("en", { sensitivity: "base" })` on the relative paths, feed `path + NUL + bytes + NUL` to `createHash("sha256")`.
+
 ## Prerequisites
 
 Node >= 24, a Vercel OIDC token (any Vercel project works), and a GitHub token

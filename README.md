@@ -36,7 +36,7 @@ Each `skills.jsonl` row:
 | `id`, `installs`, `url` | from the skills.sh leaderboard (the id encodes source and slug: `{owner}/{repo}/{slug}`) |
 | `stars` | the GitHub repository's stargazer count (the id's first two segments); `null` if the repo is gone or the count is unknown |
 | `description` | from the skill's `SKILL.md` frontmatter; skills whose SKILL.md has none are not mirrored |
-| `hash` | SHA-256 of the skill's files; `null` if unknown |
+| `hash` | Content version of the skill's files: SHA-256 over each file's `path + 0x00 + bytes + 0x00`, files in case-insensitive path order ([the upstream `hash`](DEVELOPING.md#the-upstream-hash)); `null` if unknown |
 | `fetchedAt` | when the current content version was first fetched |
 | `audits` | with `--audits`: partner audit results (`provider`, `status`, `riskLevel`, …); `[]` = none yet |
 
